@@ -49,19 +49,19 @@ namespace FiftyFifty.Board
         public float SuspensionTravel = 0.22f;
 
         [Tooltip("Stiffness, as acceleration per metre of error.")]
-        public float SpringStrength = 90f;
+        public float SpringStrength = 140f;
 
         [Tooltip("Bounce absorption. Critical damping is roughly 2 x sqrt(SpringStrength) " +
                  "(~19 at strength 90). Deliberately above that: overdamped never bounces, " +
                  "it just settles. Lower it toward 19 if the board feels sluggish on bumps.")]
-        public float SpringDamper = 26f;
+        public float SpringDamper = 24f;
 
         [Tooltip("Extra reach below full extension where a wheel still counts as touching, " +
                  "so ground contact does not flicker at the edge of the ray.")]
         public float GroundedHysteresis = 0.08f;
 
         [Tooltip("Cap on suspension acceleration, m/s squared.")]
-        public float MaxSpringAcceleration = 120f;
+        public float MaxSpringAcceleration = 220f;
 
         [Tooltip("How close to the ride height counts as actually landed. Small: this is what " +
                  "makes a landing register on the ground rather than in mid-air.")]
@@ -120,14 +120,11 @@ namespace FiftyFifty.Board
         public float AirDrag = 0.02f;
 
         [Header("Landing")]
-        [Tooltip("Upward speed kept on touchdown. 0 = fully absorbed, no bounce.")]
-        [Range(0f, 1f)] public float LandingBounceRetained = 0f;
-
         [Tooltip("Seconds after touchdown where the suspension is extra damped.")]
         public float LandingSettleTime = 0.2f;
 
         [Tooltip("How much stiffer the damper is during that settle window.")]
-        public float LandingSettleDamping = 1.8f;
+        public float LandingSettleDamping = 1f;
 
         [Header("Physics")]
         [Tooltip("Extra gravity. 1 = normal. Higher makes airs snappier and less floaty.")]
@@ -200,7 +197,15 @@ namespace FiftyFifty.Board
 
         private void FixedUpdate()
         {
-            float dt = Time.fixedDeltaTime;
+            SimulateTick(Time.fixedDeltaTime);
+        }
+
+        /// <summary>
+        /// One simulation step. Public and dt-explicit so a test harness can drive the board
+        /// without the player loop — which is how this gets measured rather than guessed at.
+        /// </summary>
+        public void SimulateTick(float dt)
+        {
 
             _input = InputSource != null ? InputSource.Read() : default;
 
@@ -215,7 +220,7 @@ namespace FiftyFifty.Board
             _rb.AddForce(Physics.gravity * GravityScale, ForceMode.Acceleration);
 
             bool wasGrounded = _grounded;
-            ApplySuspension();
+            ApplySuspension(dt);
 
             if (_grounded)
             {
@@ -253,7 +258,7 @@ namespace FiftyFifty.Board
         /// so the board sank below its ride height and the spring carried the weight instead
         /// of just correcting error. A spring under constant load rings; that was the bounce.
         /// </summary>
-        private void ApplySuspension()
+        private void ApplySuspension(float dt)
         {
             if (_popIgnoreTimer > 0f)
             {
@@ -334,6 +339,15 @@ namespace FiftyFifty.Board
 
                 // Never pull the board down: a suspension that sucks makes ramps magnetic.
                 accel = Mathf.Clamp(accel, 0f, MaxSpringAcceleration * share);
+
+                // Never REVERSE the board's fall, only arrest it. Without this the damper
+                // computes a huge force from the impact speed and applies it for a whole
+                // step, which converts a 7 m/s landing into a 2 m/s rebound — the bounce.
+                if (verticalSpeed < 0f)
+                {
+                    float arrest = (-verticalSpeed / dt) * share;
+                    accel = Mathf.Min(accel, arrest + gravityShare);
+                }
 
                 _rb.AddForceAtPosition(_up * accel, origin, ForceMode.Acceleration);
             }
@@ -445,13 +459,10 @@ namespace FiftyFifty.Board
             _settleTimer = LandingSettleTime;
             _timeInAir = 0f;
 
-            Vector3 velocity = _rb.linearVelocity;
-            float intoGround = Vector3.Dot(velocity, _groundNormal);
-            if (intoGround < 0f)
-            {
-                velocity -= _groundNormal * (intoGround * (1f - LandingBounceRetained));
-                _rb.linearVelocity = velocity;
-            }
+            // Deliberately does NOT cancel the board's fall. It used to, and the spring then
+            // fired in the same step at a force computed from the impact speed that had just
+            // been cancelled — which is what launched the board back up. The suspension alone
+            // absorbs the landing now, and cannot overshoot.
         }
 
         /// <summary>Visual lean only. Outside the physics step because it changes nothing.</summary>
