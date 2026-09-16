@@ -16,8 +16,11 @@ namespace FiftyFifty.Board
         /// <summary>Steer left/right on the ground, -1 to 1.</summary>
         public float Steer;
 
-        /// <summary>Board attitude while airborne. X rolls, Y pitches.</summary>
+        /// <summary>Board attitude while airborne. X yaws (spins), Y pitches.</summary>
         public Vector2 Attitude;
+
+        /// <summary>Roll while airborne, -1 to 1. Bumpers. This is what a flip is made of.</summary>
+        public float AirRoll;
 
         /// <summary>Acceleration, 0 to 1. Analog: right trigger.</summary>
         public float Throttle;

@@ -44,8 +44,10 @@ namespace FiftyFifty.Board
 
             GUILayout.Space(10);
             GUILayout.Label(
-                "pad:  LS steer / air attitude   RS camera   RT accelerate   LT brake   A ollie\n" +
-                "keys: A,D steer (W,S air pitch)   arrows camera   W accelerate   S brake   SPACE ollie\n" +
+                "pad:  LS steer / air yaw+pitch   LB,RB air roll   RS camera\n" +
+                "      RT accelerate   LT brake   A ollie\n" +
+                "keys: A,D steer / air yaw   W,S accelerate+brake (air pitch)   Q,E air roll\n" +
+                "      arrows camera   SPACE ollie\n" +
                 "R respawn",
                 _small);
 

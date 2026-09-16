@@ -14,7 +14,7 @@ namespace FiftyFifty.Board
     ///   - Instant ollie at a single height, on A. No charge.
     ///   - The jump arcs smoothly: the board levels on pop, stays level in the air unless
     ///     the stick says otherwise, and settles on landing instead of bouncing.
-    ///   - Attitude control in the air: the stick rotates the board.
+    ///   - Attitude control in the air: stick yaws and pitches the board, bumpers roll it.
     ///   - Terrain gives speed back through gravity only. No pumping.
     ///
     /// All simulation runs in FixedUpdate and nothing mutates board state outside it. That
@@ -88,11 +88,19 @@ namespace FiftyFifty.Board
         public bool LevelOnPop = true;
 
         [Header("Air Control")]
-        [Tooltip("How fast the stick rotates the board in the air, degrees per second.")]
-        public float AttitudeRate = 260f;
+        [Tooltip("Stick left/right in the air: spin rate about the board's up axis, deg/sec. " +
+                 "This is what a 180 or a 360 is made of.")]
+        public float AirYawRate = 320f;
+
+        [Tooltip("Stick up/down in the air: pitch rate, deg/sec. Nose up and down.")]
+        public float AirPitchRate = 220f;
+
+        [Tooltip("Bumpers in the air: roll rate about the board's long axis, deg/sec. " +
+                 "This is what a flip is made of.")]
+        public float AirRollRate = 300f;
 
         [Tooltip("How sharply attitude control responds. Higher = twitchier.")]
-        public float AttitudeSharpness = 12f;
+        public float AttitudeSharpness = 14f;
 
         [Tooltip("Air resistance. Mostly stops the board drifting oddly on long airs.")]
         public float AirDrag = 0.02f;
@@ -111,8 +119,19 @@ namespace FiftyFifty.Board
         [Tooltip("Cancel spin on touchdown. This is most of what stops the board bouncing away.")]
         public bool KillSpinOnLanding = true;
 
-        [Tooltip("Upward speed kept on touchdown. Low values absorb the landing instead of bouncing.")]
-        [Range(0f, 1f)] public float LandingBounceRetained = 0.1f;
+        [Tooltip("Upward speed kept on touchdown. 0 = the landing is fully absorbed, no bounce.")]
+        [Range(0f, 1f)] public float LandingBounceRetained = 0f;
+
+        [Tooltip("Seconds after touchdown where the suspension is extra damped, so the spring " +
+                 "settles instead of pogoing. This is the rest of the no-bounce fix.")]
+        public float LandingSettleTime = 0.25f;
+
+        [Tooltip("How much stiffer the damper is during that settle window.")]
+        public float LandingSettleDamping = 3f;
+
+        [Tooltip("Cap on how hard one wheel's spring can push. Stops a deep compression " +
+                 "from launching the board back into the air.")]
+        public float MaxSpringForce = 2200f;
 
         [Header("Physics")]
         [Tooltip("Extra gravity. 1 = normal. Higher makes airs snappier and less floaty.")]
@@ -135,6 +154,7 @@ namespace FiftyFifty.Board
         private BoardInputState _input;
         private float _popTimer;
         private float _landingAlignTimer;
+        private float _settleTimer;
         private Vector3 _groundNormal = Vector3.up;
         private Vector3 _spawnPosition;
         private Quaternion _spawnRotation;
@@ -190,6 +210,7 @@ namespace FiftyFifty.Board
             ApplyOllie(dt);
 
             _popTimer = Mathf.Max(0f, _popTimer - dt);
+            _settleTimer = Mathf.Max(0f, _settleTimer - dt);
             _speed = _rb.linearVelocity.magnitude;
         }
 
@@ -219,7 +240,20 @@ namespace FiftyFifty.Board
                 Vector3 wheelVelocity = _rb.GetPointVelocity(origin);
                 float verticalSpeed = Vector3.Dot(wheelVelocity, transform.up);
 
-                float force = (compression * SpringStrength) - (verticalSpeed * SpringDamper);
+                // Stiffen the damper briefly after touchdown: the spring's job then is to
+                // absorb the landing, not to return the energy.
+                float damper = SpringDamper;
+                if (_settleTimer > 0f)
+                {
+                    damper *= LandingSettleDamping;
+                }
+
+                float force = (compression * SpringStrength) - (verticalSpeed * damper);
+
+                // A deep compression can otherwise produce a single huge impulse that throws
+                // the board back into the air — the bounce, in one line.
+                force = Mathf.Clamp(force, -MaxSpringForce, MaxSpringForce);
+
                 _rb.AddForceAtPosition(transform.up * force, origin);
             }
 
@@ -325,21 +359,29 @@ namespace FiftyFifty.Board
             }
 
             Vector2 attitude = _input.Attitude;
+            float roll = _input.AirRoll;
 
-            if (attitude.sqrMagnitude < 0.0001f)
+            if (attitude.sqrMagnitude < 0.0001f && Mathf.Abs(roll) < 0.01f)
             {
                 ApplyAirAutoLevel(dt);
                 return;
             }
 
-            Vector3 axis = (transform.forward * -attitude.x) + (transform.right * attitude.y);
-            if (axis.sqrMagnitude < 0.0001f)
+            // Each axis gets its own rate, because they are not equally useful: yaw is how
+            // you turn to face the play (and what a 180 is made of), pitch is how you set up
+            // a landing, roll is a flip.
+            Vector3 rotation =
+                (transform.up * (attitude.x * AirYawRate))
+                + (transform.right * (attitude.y * AirPitchRate))
+                + (transform.forward * (-roll * AirRollRate));
+
+            if (rotation.sqrMagnitude < 0.0001f)
             {
                 return;
             }
 
-            float degrees = AttitudeRate * dt;
-            Quaternion target = Quaternion.AngleAxis(degrees, axis.normalized) * _rb.rotation;
+            float degrees = rotation.magnitude * dt;
+            Quaternion target = Quaternion.AngleAxis(degrees, rotation.normalized) * _rb.rotation;
             _rb.MoveRotation(Quaternion.Slerp(_rb.rotation, target, AttitudeSharpness * dt));
         }
 
@@ -397,6 +439,7 @@ namespace FiftyFifty.Board
         private void OnTouchdown()
         {
             _landingAlignTimer = LandingAlignTime;
+            _settleTimer = LandingSettleTime;
             _timeInAir = 0f;
 
             if (KillSpinOnLanding)
