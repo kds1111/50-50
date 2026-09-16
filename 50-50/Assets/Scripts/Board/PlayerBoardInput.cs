@@ -15,7 +15,6 @@ namespace FiftyFifty.Board
     ///   Right stick   — camera only
     ///   Right trigger — accelerate (analog)
     ///   Left trigger  — brake
-    ///   Bumpers       — roll the board in the air (flips)
     ///   A / Space     — ollie
     /// </summary>
     public class PlayerBoardInput : BoardInputSource
@@ -63,7 +62,6 @@ namespace FiftyFifty.Board
             Vector2 right = Vector2.zero;
             float throttle = 0f;
             float brake = 0f;
-            float roll = 0f;
 
             if (pad != null)
             {
@@ -71,9 +69,6 @@ namespace FiftyFifty.Board
                 right = pad.rightStick.ReadValue();
                 throttle = pad.rightTrigger.ReadValue();
                 brake = pad.leftTrigger.ReadValue();
-
-                if (pad.leftShoulder.isPressed) roll -= 1f;
-                if (pad.rightShoulder.isPressed) roll += 1f;
             }
 
             if (keys != null)
@@ -92,9 +87,6 @@ namespace FiftyFifty.Board
                 // which is fine because ground and air are exclusive states.
                 if (keys.wKey.isPressed) throttle = 1f;
                 if (keys.sKey.isPressed) brake = 1f;
-
-                if (keys.qKey.isPressed) roll -= 1f;
-                if (keys.eKey.isPressed) roll += 1f;
             }
 
             left = ApplyDeadzone(Vector2.ClampMagnitude(left, 1f));
@@ -106,7 +98,6 @@ namespace FiftyFifty.Board
             {
                 Steer = left.x,
                 Attitude = new Vector2(left.x, InvertAttitudePitch ? -left.y : left.y),
-                AirRoll = Mathf.Clamp(roll, -1f, 1f),
                 Throttle = Mathf.Clamp01(throttle),
                 Brake = Mathf.Clamp01(brake),
                 PopPressed = _popLatched,
