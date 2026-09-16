@@ -44,11 +44,17 @@ namespace FiftyFifty.Board
         [Tooltip("How far past the ride height the suspension still reaches.")]
         public float SuspensionTravel = 0.22f;
 
-        [Tooltip("Stiffness. Higher = the board sits harder on the ground and bumps more.")]
-        public float SpringStrength = 900f;
+        [Tooltip("Stiffness, as acceleration per metre of error. Around 90 is a firm board; " +
+                 "much higher starts to vibrate at a 50Hz physics step.")]
+        public float SpringStrength = 90f;
 
-        [Tooltip("Bounce absorption. Too low and the board pogos; too high and it feels stuck.")]
-        public float SpringDamper = 110f;
+        [Tooltip("Bounce absorption. Critical damping is roughly 2 x sqrt(SpringStrength), " +
+                 "so ~19 for a strength of 90. Below that it pogos; far above it feels stuck.")]
+        public float SpringDamper = 19f;
+
+        [Tooltip("Extra reach below full extension where a wheel still counts as touching. " +
+                 "Stops ground contact flickering on and off at the edge of the ray.")]
+        public float GroundedHysteresis = 0.08f;
 
         [Header("Drive")]
         [Tooltip("Acceleration at full trigger, in m/s squared.")]
@@ -86,6 +92,10 @@ namespace FiftyFifty.Board
         [Tooltip("Cancel spin at the moment of pop, so the jump starts clean and level. " +
                  "Turning this off is what made the board flip onto its back.")]
         public bool LevelOnPop = true;
+
+        [Tooltip("Seconds after a pop where the suspension ignores the ground. Without it the " +
+                 "spring is still in contact and immediately fights the jump.")]
+        public float PopGroundIgnoreTime = 0.12f;
 
         [Header("Air Control")]
         [Tooltip("Stick left/right in the air: spin rate about the board's up axis, deg/sec. " +
@@ -127,11 +137,11 @@ namespace FiftyFifty.Board
         public float LandingSettleTime = 0.25f;
 
         [Tooltip("How much stiffer the damper is during that settle window.")]
-        public float LandingSettleDamping = 3f;
+        public float LandingSettleDamping = 1.8f;
 
-        [Tooltip("Cap on how hard one wheel's spring can push. Stops a deep compression " +
+        [Tooltip("Cap on suspension acceleration, in m/s squared. Stops a deep compression " +
                  "from launching the board back into the air.")]
-        public float MaxSpringForce = 2200f;
+        public float MaxSpringAcceleration = 120f;
 
         [Header("Physics")]
         [Tooltip("Extra gravity. 1 = normal. Higher makes airs snappier and less floaty.")]
@@ -155,6 +165,8 @@ namespace FiftyFifty.Board
         private float _popTimer;
         private float _landingAlignTimer;
         private float _settleTimer;
+        private Quaternion _pendingRotation;
+        private float _popIgnoreTimer;
         private Vector3 _groundNormal = Vector3.up;
         private Vector3 _spawnPosition;
         private Quaternion _spawnRotation;
@@ -185,6 +197,11 @@ namespace FiftyFifty.Board
             _rb.centerOfMass = CenterOfMass;
             _rb.AddForce(Physics.gravity * GravityScale, ForceMode.Acceleration);
 
+            // Rotation is accumulated here and applied ONCE at the end of the step. Calling
+            // MoveRotation more than once per step silently discards all but the last call,
+            // which is how steering was being eaten by the landing alignment.
+            _pendingRotation = _rb.rotation;
+
             bool wasGrounded = _grounded;
             ApplySuspension();
 
@@ -209,8 +226,14 @@ namespace FiftyFifty.Board
 
             ApplyOllie(dt);
 
+            if (!Mathf.Approximately(Quaternion.Angle(_pendingRotation, _rb.rotation), 0f))
+            {
+                _rb.MoveRotation(_pendingRotation);
+            }
+
             _popTimer = Mathf.Max(0f, _popTimer - dt);
             _settleTimer = Mathf.Max(0f, _settleTimer - dt);
+            _popIgnoreTimer = Mathf.Max(0f, _popIgnoreTimer - dt);
             _speed = _rb.linearVelocity.magnitude;
         }
 
@@ -220,45 +243,71 @@ namespace FiftyFifty.Board
         /// </summary>
         private void ApplySuspension()
         {
+            if (_popIgnoreTimer > 0f)
+            {
+                _wheelsOnGround = 0;
+                _grounded = false;
+                return;
+            }
+
+            int wheels = Mathf.Max(1, WheelPoints.Length);
+            float maxDistance = RideHeight + SuspensionTravel;
+            float probeDistance = maxDistance + GroundedHysteresis;
+
             _wheelsOnGround = 0;
             Vector3 normalSum = Vector3.zero;
-            float maxDistance = RideHeight + SuspensionTravel;
+
+            // Gravity is cancelled per grounded wheel, so the spring only has to correct the
+            // difference between where the board is and where it should ride. Without this,
+            // stiffness and ride height are tangled: stiff enough to feel solid means strong
+            // enough to launch the board, which is exactly what was happening.
+            float gravityPerWheel = Physics.gravity.magnitude * GravityScale / wheels;
 
             foreach (Vector3 local in WheelPoints)
             {
                 Vector3 origin = transform.TransformPoint(local);
 
-                if (!Physics.Raycast(origin, -transform.up, out RaycastHit hit, maxDistance))
+                if (!Physics.Raycast(origin, -transform.up, out RaycastHit hit, probeDistance))
                 {
                     continue;
                 }
 
-                _wheelsOnGround++;
                 normalSum += hit.normal;
 
-                float compression = (maxDistance - hit.distance) / maxDistance;
+                // Hysteresis band: a wheel counts as touching a little beyond full extension,
+                // so contact does not flicker on and off at the edge of the ray.
+                bool touching = hit.distance <= maxDistance;
+                if (touching)
+                {
+                    _wheelsOnGround++;
+                }
+                else
+                {
+                    continue;
+                }
+
+                // Measured from the RIDE HEIGHT, not from the ray length. Positive when the
+                // board is lower than it should sit, negative when it is higher.
+                float offset = RideHeight - hit.distance;
+
                 Vector3 wheelVelocity = _rb.GetPointVelocity(origin);
                 float verticalSpeed = Vector3.Dot(wheelVelocity, transform.up);
 
-                // Stiffen the damper briefly after touchdown: the spring's job then is to
-                // absorb the landing, not to return the energy.
-                float damper = SpringDamper;
-                if (_settleTimer > 0f)
-                {
-                    damper *= LandingSettleDamping;
-                }
+                float damper = _settleTimer > 0f ? SpringDamper * LandingSettleDamping : SpringDamper;
 
-                float force = (compression * SpringStrength) - (verticalSpeed * damper);
+                // Acceleration, not force: independent of the rigidbody's mass, so changing
+                // the board's weight does not silently retune the whole feel.
+                float accel = (offset * SpringStrength) - (verticalSpeed * damper) + gravityPerWheel;
 
-                // A deep compression can otherwise produce a single huge impulse that throws
-                // the board back into the air — the bounce, in one line.
-                force = Mathf.Clamp(force, -MaxSpringForce, MaxSpringForce);
+                // Only ever push away from the ground. A suspension that pulls down is what
+                // makes a board feel magnetised to ramps.
+                accel = Mathf.Clamp(accel, 0f, MaxSpringAcceleration);
 
-                _rb.AddForceAtPosition(transform.up * force, origin);
+                _rb.AddForceAtPosition(transform.up * (accel / wheels), origin, ForceMode.Acceleration);
             }
 
             _grounded = _wheelsOnGround > 0;
-            _groundNormal = _grounded ? normalSum.normalized : Vector3.up;
+            _groundNormal = normalSum.sqrMagnitude > 0.001f ? normalSum.normalized : Vector3.up;
         }
 
         /// <summary>
@@ -302,7 +351,7 @@ namespace FiftyFifty.Board
 
             float degrees = _input.Steer * TurnRate * speedFactor * dt;
             Quaternion turn = Quaternion.AngleAxis(degrees, _groundNormal);
-            _rb.MoveRotation(turn * _rb.rotation);
+            _pendingRotation = turn * _pendingRotation;
 
             // Redirect existing velocity into the new heading, or the board would keep
             // travelling the old way and the turn would feel like a slide.
@@ -341,6 +390,7 @@ namespace FiftyFifty.Board
             }
 
             _popTimer = PopCooldown;
+            _popIgnoreTimer = PopGroundIgnoreTime;
             _grounded = false;
         }
 
@@ -381,8 +431,8 @@ namespace FiftyFifty.Board
             }
 
             float degrees = rotation.magnitude * dt;
-            Quaternion target = Quaternion.AngleAxis(degrees, rotation.normalized) * _rb.rotation;
-            _rb.MoveRotation(Quaternion.Slerp(_rb.rotation, target, AttitudeSharpness * dt));
+            Quaternion target = Quaternion.AngleAxis(degrees, rotation.normalized) * _pendingRotation;
+            _pendingRotation = Quaternion.Slerp(_pendingRotation, target, Mathf.Clamp01(AttitudeSharpness * dt));
         }
 
         /// <summary>
@@ -404,7 +454,7 @@ namespace FiftyFifty.Board
             }
 
             Quaternion upright = Quaternion.LookRotation(flatForward.normalized, Vector3.up);
-            _rb.MoveRotation(Quaternion.Slerp(_rb.rotation, upright, Mathf.Clamp01(AirAutoLevel * dt)));
+            _pendingRotation = Quaternion.Slerp(_pendingRotation, upright, Mathf.Clamp01(AirAutoLevel * dt));
         }
 
         /// <summary>
@@ -428,7 +478,7 @@ namespace FiftyFifty.Board
 
             Quaternion upright = Quaternion.LookRotation(flatForward, _groundNormal);
             float t = Mathf.Clamp01(dt / Mathf.Max(0.001f, LandingAlignTime));
-            _rb.MoveRotation(Quaternion.Slerp(_rb.rotation, upright, t));
+            _pendingRotation = Quaternion.Slerp(_pendingRotation, upright, t);
         }
 
         /// <summary>
