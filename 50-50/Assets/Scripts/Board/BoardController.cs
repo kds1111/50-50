@@ -51,8 +51,10 @@ namespace FiftyFifty.Board
         [Tooltip("Stiffness, as acceleration per metre of error.")]
         public float SpringStrength = 90f;
 
-        [Tooltip("Bounce absorption. Critical damping is roughly 2 x sqrt(SpringStrength).")]
-        public float SpringDamper = 19f;
+        [Tooltip("Bounce absorption. Critical damping is roughly 2 x sqrt(SpringStrength) " +
+                 "(~19 at strength 90). Deliberately above that: overdamped never bounces, " +
+                 "it just settles. Lower it toward 19 if the board feels sluggish on bumps.")]
+        public float SpringDamper = 26f;
 
         [Tooltip("Extra reach below full extension where a wheel still counts as touching, " +
                  "so ground contact does not flicker at the edge of the ray.")]
@@ -164,6 +166,9 @@ namespace FiftyFifty.Board
         private Vector3[] _wheelOrigins;
         private float[] _wheelDistances;
         private int _hitCount;
+        private Vector3 _up = Vector3.up;
+        private Vector3 _forward = Vector3.forward;
+        private Vector3 _right = Vector3.right;
         private Vector3 _spawnPosition;
         private float _spawnHeading;
 
@@ -198,6 +203,15 @@ namespace FiftyFifty.Board
             float dt = Time.fixedDeltaTime;
 
             _input = InputSource != null ? InputSource.Read() : default;
+
+            // Read the PHYSICS pose, never the transform. With interpolation on, transform is
+            // the rendered pose during FixedUpdate — a slightly different height than physics
+            // actually has. Feeding that into the suspension makes the spring chase its own
+            // interpolation, which self-oscillates: the board bounces with no input at all.
+            _up = _rb.rotation * Vector3.up;
+            _forward = _rb.rotation * Vector3.forward;
+            _right = _rb.rotation * Vector3.right;
+
             _rb.AddForce(Physics.gravity * GravityScale, ForceMode.Acceleration);
 
             bool wasGrounded = _grounded;
@@ -261,9 +275,9 @@ namespace FiftyFifty.Board
             // Pass one: who is touching?
             for (int i = 0; i < WheelPoints.Length; i++)
             {
-                Vector3 origin = transform.TransformPoint(WheelPoints[i]);
+                Vector3 origin = _rb.position + (_rb.rotation * WheelPoints[i]);
 
-                if (!Physics.Raycast(origin, -transform.up, out RaycastHit hit, probeDistance))
+                if (!Physics.Raycast(origin, -_up, out RaycastHit hit, probeDistance))
                 {
                     continue;
                 }
@@ -313,7 +327,7 @@ namespace FiftyFifty.Board
                 float offset = RideHeight - _wheelDistances[i];
 
                 Vector3 wheelVelocity = _rb.GetPointVelocity(origin);
-                float verticalSpeed = Vector3.Dot(wheelVelocity, transform.up);
+                float verticalSpeed = Vector3.Dot(wheelVelocity, _up);
 
                 float spring = ((offset * SpringStrength) - (verticalSpeed * damper)) * share;
                 float accel = spring + gravityShare;
@@ -321,7 +335,7 @@ namespace FiftyFifty.Board
                 // Never pull the board down: a suspension that sucks makes ramps magnetic.
                 accel = Mathf.Clamp(accel, 0f, MaxSpringAcceleration * share);
 
-                _rb.AddForceAtPosition(transform.up * accel, origin, ForceMode.Acceleration);
+                _rb.AddForceAtPosition(_up * accel, origin, ForceMode.Acceleration);
             }
         }
 
@@ -337,7 +351,7 @@ namespace FiftyFifty.Board
         /// <summary>Steering turns the heading. Nothing else rotates the board on the ground.</summary>
         private void Steer(float dt)
         {
-            float forwardSpeed = Vector3.Dot(_rb.linearVelocity, transform.forward);
+            float forwardSpeed = Vector3.Dot(_rb.linearVelocity, _forward);
             float speedFactor = Mathf.Clamp01(Mathf.Abs(forwardSpeed) / Mathf.Max(0.01f, FullSteerSpeed));
 
             _heading += _input.Steer * TurnRate * speedFactor * dt;
@@ -351,7 +365,7 @@ namespace FiftyFifty.Board
 
         private void ApplyDrive(float dt)
         {
-            Vector3 forward = Vector3.ProjectOnPlane(transform.forward, _groundNormal).normalized;
+            Vector3 forward = Vector3.ProjectOnPlane(_forward, _groundNormal).normalized;
             float forwardSpeed = Vector3.Dot(_rb.linearVelocity, forward);
 
             if (_input.Throttle > 0.01f && forwardSpeed < TopSpeed)
@@ -375,7 +389,7 @@ namespace FiftyFifty.Board
         private void ApplyGrip(float dt)
         {
             Vector3 velocity = _rb.linearVelocity;
-            Vector3 right = transform.right;
+            Vector3 right = _right;
             float lateral = Vector3.Dot(velocity, right);
 
             // Frame-rate independent: SidewaysGrip is "fraction removed per 1/60s".
