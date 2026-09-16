@@ -61,6 +61,10 @@ namespace FiftyFifty.Board
         [Tooltip("Cap on suspension acceleration, m/s squared.")]
         public float MaxSpringAcceleration = 120f;
 
+        [Tooltip("How close to the ride height counts as actually landed. Small: this is what " +
+                 "makes a landing register on the ground rather than in mid-air.")]
+        public float GroundedTolerance = 0.06f;
+
         [Header("Drive")]
         [Tooltip("Acceleration at full trigger, in m/s squared.")]
         public float Acceleration = 14f;
@@ -157,6 +161,9 @@ namespace FiftyFifty.Board
         private float _popIgnoreTimer;
         private float _settleTimer;
         private float _visualLean;
+        private Vector3[] _wheelOrigins;
+        private float[] _wheelDistances;
+        private int _hitCount;
         private Vector3 _spawnPosition;
         private float _spawnHeading;
 
@@ -224,10 +231,13 @@ namespace FiftyFifty.Board
         }
 
         /// <summary>
-        /// A spring per wheel. Gravity is cancelled per grounded wheel, so stiffness and ride
-        /// height stay independent — tangling those is what made the board launch itself.
-        /// Rotation is frozen, so the torque these off-centre forces would produce is ignored;
-        /// they exist to hold the board at ride height and to read the surface.
+        /// A spring per wheel, in two passes.
+        ///
+        /// Pass one finds which wheels are in contact; pass two applies the spring, sharing
+        /// the load across exactly those wheels. Two passes because the share depends on the
+        /// count — doing it in one pass is what made gravity compensation four times too weak,
+        /// so the board sank below its ride height and the spring carried the weight instead
+        /// of just correcting error. A spring under constant load rings; that was the bounce.
         /// </summary>
         private void ApplySuspension()
         {
@@ -238,17 +248,20 @@ namespace FiftyFifty.Board
                 return;
             }
 
-            int wheels = Mathf.Max(1, WheelPoints.Length);
             float maxDistance = RideHeight + SuspensionTravel;
             float probeDistance = maxDistance + GroundedHysteresis;
-            float gravityPerWheel = Physics.gravity.magnitude * GravityScale / wheels;
 
             _wheelsOnGround = 0;
+            _hitCount = 0;
             Vector3 normalSum = Vector3.zero;
+            bool nearRideHeight = false;
 
-            foreach (Vector3 local in WheelPoints)
+            EnsureWheelBuffers();
+
+            // Pass one: who is touching?
+            for (int i = 0; i < WheelPoints.Length; i++)
             {
-                Vector3 origin = transform.TransformPoint(local);
+                Vector3 origin = transform.TransformPoint(WheelPoints[i]);
 
                 if (!Physics.Raycast(origin, -transform.up, out RaycastHit hit, probeDistance))
                 {
@@ -262,27 +275,62 @@ namespace FiftyFifty.Board
                     continue;
                 }
 
-                _wheelsOnGround++;
+                _wheelOrigins[_hitCount] = origin;
+                _wheelDistances[_hitCount] = hit.distance;
+                _hitCount++;
 
-                float offset = RideHeight - hit.distance;
-                Vector3 wheelVelocity = _rb.GetPointVelocity(origin);
-                float verticalSpeed = Vector3.Dot(wheelVelocity, transform.up);
-
-                float damper = _settleTimer > 0f ? SpringDamper * LandingSettleDamping : SpringDamper;
-                float accel = (offset * SpringStrength) - (verticalSpeed * damper) + gravityPerWheel;
-
-                // Only ever push away from the ground; a suspension that pulls down makes the
-                // board feel magnetised to ramps.
-                accel = Mathf.Clamp(accel, 0f, MaxSpringAcceleration);
-
-                _rb.AddForceAtPosition(transform.up * (accel / wheels), origin, ForceMode.Acceleration);
+                // Grounded means resting on the surface, NOT merely within suspension reach.
+                // Using the full reach meant touchdown fired while the board was still a
+                // whole suspension-travel above the ground, killing its fall in mid-air and
+                // then dropping it — which read as a bounce.
+                if (hit.distance <= RideHeight + GroundedTolerance)
+                {
+                    nearRideHeight = true;
+                }
             }
 
-            _grounded = _wheelsOnGround > 0;
+            _wheelsOnGround = _hitCount;
+            _grounded = nearRideHeight;
 
             if (normalSum.sqrMagnitude > 0.001f)
             {
                 _groundNormal = normalSum.normalized;
+            }
+
+            if (_hitCount == 0)
+            {
+                return;
+            }
+
+            // Pass two: share the load across the wheels that are actually touching.
+            float share = 1f / _hitCount;
+            float gravityShare = Physics.gravity.magnitude * GravityScale * share;
+            float damper = _settleTimer > 0f ? SpringDamper * LandingSettleDamping : SpringDamper;
+
+            for (int i = 0; i < _hitCount; i++)
+            {
+                Vector3 origin = _wheelOrigins[i];
+                float offset = RideHeight - _wheelDistances[i];
+
+                Vector3 wheelVelocity = _rb.GetPointVelocity(origin);
+                float verticalSpeed = Vector3.Dot(wheelVelocity, transform.up);
+
+                float spring = ((offset * SpringStrength) - (verticalSpeed * damper)) * share;
+                float accel = spring + gravityShare;
+
+                // Never pull the board down: a suspension that sucks makes ramps magnetic.
+                accel = Mathf.Clamp(accel, 0f, MaxSpringAcceleration * share);
+
+                _rb.AddForceAtPosition(transform.up * accel, origin, ForceMode.Acceleration);
+            }
+        }
+
+        private void EnsureWheelBuffers()
+        {
+            if (_wheelOrigins == null || _wheelOrigins.Length < WheelPoints.Length)
+            {
+                _wheelOrigins = new Vector3[WheelPoints.Length];
+                _wheelDistances = new float[WheelPoints.Length];
             }
         }
 
