@@ -11,11 +11,11 @@ namespace FiftyFifty.Board
     /// once the bindings settle.
     ///
     /// Control map (settled on issue #16):
-    ///   Left stick  — steer on the ground, board attitude in the air
-    ///   Right stick — camera only
-    ///   A / Space   — push (kick)
-    ///   X / LShift  — ollie
-    ///   B / S       — brake
+    ///   Left stick    — steer on the ground, board attitude in the air
+    ///   Right stick   — camera only
+    ///   Right trigger — accelerate (analog)
+    ///   Left trigger  — brake
+    ///   A / Space     — ollie
     /// </summary>
     public class PlayerBoardInput : BoardInputSource
     {
@@ -28,12 +28,11 @@ namespace FiftyFifty.Board
 
         [Header("Read-only (for debugging in play mode)")]
         [SerializeField] private Vector2 _debugLeftStick;
-        [SerializeField] private bool _debugPushLatched;
+        [SerializeField] private float _debugThrottle;
         [SerializeField] private bool _debugPopLatched;
 
-        // One-shot latches. Set in Update (which can run many times per fixed step, or none),
-        // consumed in Read. Without these, a quick tap between fixed steps is silently lost.
-        private bool _pushLatched;
+        // One-shot latch. Set in Update (which can run many times per fixed step, or none),
+        // consumed in Read. Without it, a quick tap between fixed steps is silently lost.
         private bool _popLatched;
 
         private void Update()
@@ -41,19 +40,16 @@ namespace FiftyFifty.Board
             Gamepad pad = Gamepad.current;
             Keyboard keys = Keyboard.current;
 
-            if (pad != null)
+            if (pad != null && pad.buttonSouth.wasPressedThisFrame)
             {
-                if (pad.buttonSouth.wasPressedThisFrame) _pushLatched = true;
-                if (pad.buttonWest.wasPressedThisFrame) _popLatched = true;
+                _popLatched = true;
             }
 
-            if (keys != null)
+            if (keys != null && keys.spaceKey.wasPressedThisFrame)
             {
-                if (keys.spaceKey.wasPressedThisFrame) _pushLatched = true;
-                if (keys.leftShiftKey.wasPressedThisFrame) _popLatched = true;
+                _popLatched = true;
             }
 
-            _debugPushLatched = _pushLatched;
             _debugPopLatched = _popLatched;
         }
 
@@ -64,13 +60,15 @@ namespace FiftyFifty.Board
 
             Vector2 left = Vector2.zero;
             Vector2 right = Vector2.zero;
-            bool brake = false;
+            float throttle = 0f;
+            float brake = 0f;
 
             if (pad != null)
             {
                 left = pad.leftStick.ReadValue();
                 right = pad.rightStick.ReadValue();
-                brake = pad.buttonEast.isPressed;
+                throttle = pad.rightTrigger.ReadValue();
+                brake = pad.leftTrigger.ReadValue();
             }
 
             if (keys != null)
@@ -85,24 +83,27 @@ namespace FiftyFifty.Board
                 if (keys.upArrowKey.isPressed) right.y += 1f;
                 if (keys.downArrowKey.isPressed) right.y -= 1f;
 
-                if (keys.sKey.isPressed) brake = true;
+                // Keyboard fallback: W accelerates, S brakes. These double as air pitch,
+                // which is fine because ground and air are exclusive states.
+                if (keys.wKey.isPressed) throttle = 1f;
+                if (keys.sKey.isPressed) brake = 1f;
             }
 
             left = ApplyDeadzone(Vector2.ClampMagnitude(left, 1f));
             right = ApplyDeadzone(Vector2.ClampMagnitude(right, 1f));
             _debugLeftStick = left;
+            _debugThrottle = throttle;
 
             var state = new BoardInputState
             {
                 Steer = left.x,
                 Attitude = new Vector2(left.x, InvertAttitudePitch ? -left.y : left.y),
-                PushPressed = _pushLatched,
+                Throttle = Mathf.Clamp01(throttle),
+                Brake = Mathf.Clamp01(brake),
                 PopPressed = _popLatched,
-                BrakeHeld = brake,
                 CameraLook = right,
             };
 
-            _pushLatched = false;
             _popLatched = false;
 
             return state;

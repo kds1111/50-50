@@ -7,10 +7,13 @@ namespace FiftyFifty.Board
     /// by playing, not by reading.
     ///
     /// Decisions this implements (settled by grilling on #16):
-    ///   - Discrete push, not a throttle. You kick, you coast, you kick again.
+    ///   - Constant acceleration on the right trigger. The push is an animation, not
+    ///     a physics event (changed 2026-09-15; was a discrete kick).
     ///   - Rail-like grip. No sliding; turns are carving arcs.
     ///   - One direction. No fakie/switch stance.
-    ///   - Instant ollie at a single height. No charge.
+    ///   - Instant ollie at a single height, on A. No charge.
+    ///   - The jump arcs smoothly: the board levels on pop, stays level in the air unless
+    ///     the stick says otherwise, and settles on landing instead of bouncing.
     ///   - Attitude control in the air: the stick rotates the board.
     ///   - Terrain gives speed back through gravity only. No pumping.
     ///
@@ -47,21 +50,18 @@ namespace FiftyFifty.Board
         [Tooltip("Bounce absorption. Too low and the board pogos; too high and it feels stuck.")]
         public float SpringDamper = 110f;
 
-        [Header("Push")]
-        [Tooltip("Speed added by one kick, in m/s.")]
-        public float PushImpulse = 3.2f;
+        [Header("Drive")]
+        [Tooltip("Acceleration at full trigger, in m/s squared.")]
+        public float Acceleration = 14f;
 
-        [Tooltip("Minimum seconds between kicks. Stops the board being a machine gun.")]
-        public float PushCooldown = 0.45f;
-
-        [Tooltip("Speed the board will not push past. Gravity and ramps can still exceed it.")]
+        [Tooltip("Speed the board will not accelerate past. Gravity and ramps can still exceed it.")]
         public float TopSpeed = 12f;
 
-        [Tooltip("How quickly a coasting board loses speed. This is what makes pushing matter.")]
-        public float RollingResistance = 0.35f;
+        [Tooltip("How quickly a coasting board loses speed.")]
+        public float RollingResistance = 0.25f;
 
-        [Tooltip("Extra deceleration while braking.")]
-        public float BrakeStrength = 6f;
+        [Tooltip("Deceleration at full brake.")]
+        public float BrakeStrength = 9f;
 
         [Header("Steering")]
         [Tooltip("Turn rate in degrees per second at full lock.")]
@@ -80,11 +80,12 @@ namespace FiftyFifty.Board
         [Tooltip("Upward speed added by an ollie, in m/s. One height, no charge.")]
         public float PopVelocity = 5.2f;
 
-        [Tooltip("Backward tip on pop, so the board noses up like a real ollie. Cosmetic-ish.")]
-        public float PopTipTorque = 1.1f;
-
         [Tooltip("Seconds after landing before another ollie is allowed.")]
         public float PopCooldown = 0.12f;
+
+        [Tooltip("Cancel spin at the moment of pop, so the jump starts clean and level. " +
+                 "Turning this off is what made the board flip onto its back.")]
+        public bool LevelOnPop = true;
 
         [Header("Air Control")]
         [Tooltip("How fast the stick rotates the board in the air, degrees per second.")]
@@ -96,9 +97,22 @@ namespace FiftyFifty.Board
         [Tooltip("Air resistance. Mostly stops the board drifting oddly on long airs.")]
         public float AirDrag = 0.02f;
 
+        [Tooltip("How strongly the board returns to level when the stick is neutral. " +
+                 "0 = fully committed to whatever rotation you left the ground with.")]
+        public float AirAutoLevel = 6f;
+
+        [Tooltip("How much residual spin is bled off each second in the air. Higher = calmer.")]
+        public float AirAngularDamping = 4f;
+
         [Header("Landing")]
-        [Tooltip("On landing, snap the board's rotation upright over this many seconds. 0 = never.")]
-        public float LandingAlignTime = 0.12f;
+        [Tooltip("On landing, ease the board upright over this many seconds. 0 = never.")]
+        public float LandingAlignTime = 0.18f;
+
+        [Tooltip("Cancel spin on touchdown. This is most of what stops the board bouncing away.")]
+        public bool KillSpinOnLanding = true;
+
+        [Tooltip("Upward speed kept on touchdown. Low values absorb the landing instead of bouncing.")]
+        [Range(0f, 1f)] public float LandingBounceRetained = 0.1f;
 
         [Header("Physics")]
         [Tooltip("Extra gravity. 1 = normal. Higher makes airs snappier and less floaty.")]
@@ -111,7 +125,6 @@ namespace FiftyFifty.Board
         [SerializeField] private bool _grounded;
         [SerializeField] private float _speed;
         [SerializeField] private int _wheelsOnGround;
-        [SerializeField] private float _timeSincePush;
         [SerializeField] private float _timeInAir;
 
         public bool Grounded => _grounded;
@@ -120,7 +133,6 @@ namespace FiftyFifty.Board
 
         private Rigidbody _rb;
         private BoardInputState _input;
-        private float _pushTimer;
         private float _popTimer;
         private float _landingAlignTimer;
         private Vector3 _groundNormal = Vector3.up;
@@ -160,8 +172,7 @@ namespace FiftyFifty.Board
             {
                 if (!wasGrounded)
                 {
-                    _landingAlignTimer = LandingAlignTime;
-                    _timeInAir = 0f;
+                    OnTouchdown();
                 }
 
                 ApplyDrive(dt);
@@ -178,9 +189,7 @@ namespace FiftyFifty.Board
 
             ApplyOllie(dt);
 
-            _pushTimer = Mathf.Max(0f, _pushTimer - dt);
             _popTimer = Mathf.Max(0f, _popTimer - dt);
-            _timeSincePush += dt;
             _speed = _rb.linearVelocity.magnitude;
         }
 
@@ -219,26 +228,25 @@ namespace FiftyFifty.Board
         }
 
         /// <summary>
-        /// Discrete kicks, not a throttle. Speed decays whenever you are not pushing, so
-        /// keeping speed is an activity rather than a state.
+        /// Constant acceleration from the trigger. The push is an animation played over this,
+        /// not a physics event — so speed is smooth and predictable while chasing a ball.
         /// </summary>
         private void ApplyDrive(float dt)
         {
             Vector3 forward = Vector3.ProjectOnPlane(transform.forward, _groundNormal).normalized;
             float forwardSpeed = Vector3.Dot(_rb.linearVelocity, forward);
 
-            if (_input.PushPressed && _pushTimer <= 0f && forwardSpeed < TopSpeed)
+            if (_input.Throttle > 0.01f && forwardSpeed < TopSpeed)
             {
-                _rb.AddForce(forward * PushImpulse, ForceMode.VelocityChange);
-                _pushTimer = PushCooldown;
-                _timeSincePush = 0f;
+                _rb.AddForce(forward * (_input.Throttle * Acceleration), ForceMode.Acceleration);
             }
 
             _rb.AddForce(-_rb.linearVelocity * RollingResistance, ForceMode.Acceleration);
 
-            if (_input.BrakeHeld)
+            if (_input.Brake > 0.01f)
             {
-                _rb.AddForce(-_rb.linearVelocity * BrakeStrength, ForceMode.Acceleration);
+                _rb.AddForce(-_rb.linearVelocity * (_input.Brake * BrakeStrength),
+                    ForceMode.Acceleration);
             }
         }
 
@@ -287,8 +295,17 @@ namespace FiftyFifty.Board
                 return;
             }
 
-            _rb.AddForce(_groundNormal * PopVelocity, ForceMode.VelocityChange);
-            _rb.AddTorque(-transform.right * PopTipTorque, ForceMode.VelocityChange);
+            // Pop straight up from the surface. No tip torque: a nose-up kick plus a low
+            // centre of mass is what rotated the board onto its back.
+            Vector3 velocity = _rb.linearVelocity;
+            velocity -= Vector3.Project(velocity, _groundNormal);
+            _rb.linearVelocity = velocity + (_groundNormal * PopVelocity);
+
+            if (LevelOnPop)
+            {
+                _rb.angularVelocity = Vector3.zero;
+            }
+
             _popTimer = PopCooldown;
             _grounded = false;
         }
@@ -299,9 +316,19 @@ namespace FiftyFifty.Board
         /// </summary>
         private void ApplyAirControl(float dt)
         {
+            // Bleed residual spin picked up from the ground, so a scrappy takeoff does not
+            // become a tumble. Without this the board keeps whatever the suspension gave it.
+            if (AirAngularDamping > 0f)
+            {
+                _rb.angularVelocity = Vector3.Lerp(
+                    _rb.angularVelocity, Vector3.zero, Mathf.Clamp01(AirAngularDamping * dt));
+            }
+
             Vector2 attitude = _input.Attitude;
+
             if (attitude.sqrMagnitude < 0.0001f)
             {
+                ApplyAirAutoLevel(dt);
                 return;
             }
 
@@ -314,6 +341,28 @@ namespace FiftyFifty.Board
             float degrees = AttitudeRate * dt;
             Quaternion target = Quaternion.AngleAxis(degrees, axis.normalized) * _rb.rotation;
             _rb.MoveRotation(Quaternion.Slerp(_rb.rotation, target, AttitudeSharpness * dt));
+        }
+
+        /// <summary>
+        /// With the stick neutral, drift back towards level. This is what makes a plain ollie
+        /// a clean up-and-down hop: you only rotate when you ask to. Set AirAutoLevel to 0 for
+        /// a fully committed board, which is more honest to skating and much harder.
+        /// </summary>
+        private void ApplyAirAutoLevel(float dt)
+        {
+            if (AirAutoLevel <= 0f)
+            {
+                return;
+            }
+
+            Vector3 flatForward = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
+            if (flatForward.sqrMagnitude < 0.001f)
+            {
+                return;
+            }
+
+            Quaternion upright = Quaternion.LookRotation(flatForward.normalized, Vector3.up);
+            _rb.MoveRotation(Quaternion.Slerp(_rb.rotation, upright, Mathf.Clamp01(AirAutoLevel * dt)));
         }
 
         /// <summary>
@@ -338,6 +387,31 @@ namespace FiftyFifty.Board
             Quaternion upright = Quaternion.LookRotation(flatForward, _groundNormal);
             float t = Mathf.Clamp01(dt / Mathf.Max(0.001f, LandingAlignTime));
             _rb.MoveRotation(Quaternion.Slerp(_rb.rotation, upright, t));
+        }
+
+        /// <summary>
+        /// Called on the tick the board regains the ground. Absorbs the landing rather than
+        /// letting the suspension spring fire it back into the air, which is what caused the
+        /// board to bounce around after every ollie.
+        /// </summary>
+        private void OnTouchdown()
+        {
+            _landingAlignTimer = LandingAlignTime;
+            _timeInAir = 0f;
+
+            if (KillSpinOnLanding)
+            {
+                _rb.angularVelocity = Vector3.zero;
+            }
+
+            Vector3 velocity = _rb.linearVelocity;
+            float intoGround = Vector3.Dot(velocity, _groundNormal);
+            if (intoGround < 0f)
+            {
+                // Remove most of the downward speed so the spring has little to react against.
+                velocity -= _groundNormal * (intoGround * (1f - LandingBounceRetained));
+                _rb.linearVelocity = velocity;
+            }
         }
 
         /// <summary>Put the board back at its starting position. Bound to R in the test scene.</summary>

@@ -19,14 +19,14 @@ namespace FiftyFifty.Board
         /// <summary>Board attitude while airborne. X rolls, Y pitches.</summary>
         public Vector2 Attitude;
 
-        /// <summary>True on the tick the push kick is requested.</summary>
-        public bool PushPressed;
+        /// <summary>Acceleration, 0 to 1. Analog: right trigger.</summary>
+        public float Throttle;
+
+        /// <summary>Braking, 0 to 1. Analog: left trigger.</summary>
+        public float Brake;
 
         /// <summary>True on the tick the ollie is requested.</summary>
         public bool PopPressed;
-
-        /// <summary>True while braking (foot down).</summary>
-        public bool BrakeHeld;
 
         /// <summary>Camera orbit, right stick. Presentation only, not simulation state.</summary>
         public Vector2 CameraLook;
