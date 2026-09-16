@@ -10,6 +10,11 @@ namespace FiftyFifty.CameraRig
     /// It deliberately ignores the board's roll and pitch: a camera that tumbles with a
     /// flipping board makes air unreadable, and unreadable air means you cannot tell whether
     /// a landing was your fault.
+    ///
+    /// In the air it also stops chasing the heading. Spinning a 180 should not spin the view,
+    /// because that is exactly when the player is trying to read where they will land. The
+    /// camera holds the heading it had at takeoff and follows the spin only a little way, so
+    /// the rotation is still legible without the world turning underneath you.
     /// </summary>
     public class BoardChaseCamera : MonoBehaviour
     {
@@ -18,6 +23,9 @@ namespace FiftyFifty.CameraRig
 
         [Tooltip("Optional. Used to read the camera stick. Found on the target if empty.")]
         public BoardInputSource InputSource;
+
+        [Tooltip("Optional. Used to know whether the board is airborne. Found on the target if empty.")]
+        public BoardController Board;
 
         [Header("Framing")]
         [Tooltip("Where the camera sits relative to the board's heading.")]
@@ -30,8 +38,17 @@ namespace FiftyFifty.CameraRig
         [Tooltip("How quickly the camera catches up in position. Higher = stiffer.")]
         public float PositionDamping = 8f;
 
-        [Tooltip("How quickly the camera swings to the board's heading. Lower = lazier.")]
+        [Tooltip("How quickly the camera swings to the board's heading on the ground.")]
         public float HeadingDamping = 4f;
+
+        [Header("Airborne")]
+        [Tooltip("How far the camera will follow a spin while airborne, in degrees either way. " +
+                 "0 keeps the view perfectly still; 180 would follow the spin completely.")]
+        [Range(0f, 180f)] public float AirHeadingFollow = 35f;
+
+        [Tooltip("How quickly the camera follows within that limit. Lower than the ground " +
+                 "value on purpose — a lazy camera in the air is a readable one.")]
+        public float AirHeadingDamping = 2.5f;
 
         [Header("Orbit (right stick)")]
         public float OrbitSpeed = 140f;
@@ -48,6 +65,8 @@ namespace FiftyFifty.CameraRig
         private float _orbitPitch;
         private float _idleTime;
         private Quaternion _heading = Quaternion.identity;
+        private float _anchorHeading;
+        private bool _wasGrounded = true;
 
         private void Start()
         {
@@ -55,6 +74,13 @@ namespace FiftyFifty.CameraRig
             {
                 InputSource = Target.GetComponent<BoardInputSource>();
             }
+
+            if (Target != null && Board == null)
+            {
+                Board = Target.GetComponent<BoardController>();
+            }
+
+            _anchorHeading = Target != null ? Target.eulerAngles.y : 0f;
 
             if (Target != null)
             {
@@ -92,13 +118,50 @@ namespace FiftyFifty.CameraRig
                 }
             }
 
-            _heading = Quaternion.Slerp(_heading, FlatHeading(), HeadingDamping * dt);
+            UpdateHeading(dt);
 
             Quaternion orbit = Quaternion.Euler(_orbitPitch, _orbitYaw, 0f);
             Vector3 wanted = Target.position + (_heading * orbit * Offset);
 
             transform.position = Vector3.Lerp(transform.position, wanted, PositionDamping * dt);
             transform.LookAt(Target.position + (Vector3.up * LookAtHeight));
+        }
+
+        /// <summary>
+        /// On the ground the camera sits behind the board. In the air it holds the heading it
+        /// had at takeoff, following the spin only as far as AirHeadingFollow allows, so a 180
+        /// reads as the board turning rather than the world turning.
+        /// </summary>
+        private void UpdateHeading(float dt)
+        {
+            bool grounded = Board == null || Board.Grounded;
+            float boardHeading = Target.eulerAngles.y;
+
+            if (grounded)
+            {
+                if (!_wasGrounded)
+                {
+                    // Landed: the board's heading is authoritative again.
+                    _anchorHeading = boardHeading;
+                }
+
+                _wasGrounded = true;
+                _heading = Quaternion.Slerp(_heading, FlatHeading(), Mathf.Clamp01(HeadingDamping * dt));
+                return;
+            }
+
+            if (_wasGrounded)
+            {
+                // Took off: remember where the view was pointing and keep it.
+                _anchorHeading = _heading.eulerAngles.y;
+                _wasGrounded = false;
+            }
+
+            float spun = Mathf.DeltaAngle(_anchorHeading, boardHeading);
+            float allowed = Mathf.Clamp(spun, -AirHeadingFollow, AirHeadingFollow);
+            Quaternion wanted = Quaternion.Euler(0f, _anchorHeading + allowed, 0f);
+
+            _heading = Quaternion.Slerp(_heading, wanted, Mathf.Clamp01(AirHeadingDamping * dt));
         }
 
         /// <summary>The board's facing, flattened — roll and pitch are deliberately discarded.</summary>

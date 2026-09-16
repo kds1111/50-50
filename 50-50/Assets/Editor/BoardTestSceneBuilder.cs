@@ -148,6 +148,7 @@ namespace FiftyFifty.EditorTools
             var chase = go.AddComponent<BoardChaseCamera>();
             chase.Target = board.transform;
             chase.InputSource = board.GetComponent<PlayerBoardInput>();
+            chase.Board = board.GetComponent<BoardController>();
         }
 
         private static void CreateHud(BoardController board)
