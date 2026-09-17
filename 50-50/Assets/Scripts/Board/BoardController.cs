@@ -80,6 +80,25 @@ namespace FiftyFifty.Board
         [Tooltip("Deceleration at full brake.")]
         public float BrakeStrength = 9f;
 
+        [Tooltip("Once stopped, holding the brake backs the board up. Off makes the brake a " +
+                 "brake and nothing else.")]
+        public bool ReverseEnabled = true;
+
+        [Tooltip("Forward speed below which the brake stops braking and starts reversing. Small " +
+                 "and positive: it is the handover point, not a deadzone.")]
+        public float ReverseThreshold = 0.4f;
+
+        [Tooltip("Acceleration while reversing, m/s squared. Deliberately weaker than forward " +
+                 "drive — reversing is for getting off a wall, not for playing.")]
+        public float ReverseAcceleration = 7f;
+
+        [Tooltip("Fastest the board will travel backwards, m/s.")]
+        public float ReverseTopSpeed = 5f;
+
+        [Tooltip("Seconds the brake must stay held after stopping before it starts reversing. " +
+                 "Without it, every brake down to walking pace rolls you backwards by accident.")]
+        public float ReverseEngageDelay = 0.25f;
+
         [Header("Steering")]
         [Tooltip("Turn rate in degrees per second at full lock.")]
         public float TurnRate = 130f;
@@ -89,6 +108,11 @@ namespace FiftyFifty.Board
 
         [Tooltip("How much sideways velocity is scrubbed. 1 = fully on rails, 0 = frictionless ice.")]
         [Range(0f, 1f)] public float SidewaysGrip = 0.92f;
+
+        [Tooltip("Steer like a car backing up, where the stick swings the tail. Off by default: " +
+                 "the board's rotation is commanded rather than simulated, so 'left turns left' " +
+                 "stays true whichever way you are rolling.")]
+        public bool InvertSteerInReverse = false;
 
         [Header("Slope")]
         [Tooltip("How quickly the board tilts to match the ground it is riding. Higher = snappier.")]
@@ -126,6 +150,26 @@ namespace FiftyFifty.Board
         [Tooltip("How much stiffer the damper is during that settle window.")]
         public float LandingSettleDamping = 1f;
 
+        [Header("Disturbance (ball contact)")]
+        [Tooltip("Biggest heading wobble a hit can cause, in degrees either way. Capped hard on " +
+                 "purpose (#7): a ball should cost you your line, never your orientation.")]
+        public float MaxDisturbanceDegrees = 22f;
+
+        [Tooltip("How fast the wobble oscillates, in Hz.")]
+        public float DisturbanceFrequency = 3.5f;
+
+        [Tooltip("How quickly the wobble dies away. Higher = shorter.")]
+        public float DisturbanceDecay = 6f;
+
+        [Tooltip("How long Disturbed stays true after a hit. The trick grading on #6 reads this " +
+                 "to know a landing was ruined by contact rather than by the player.")]
+        public float DisturbedFlagSeconds = 0.5f;
+
+        [Tooltip("STAND-IN for #6's trick tag: airborne yaw past this many turns counts as being " +
+                 "in a trick, which is what makes a plain ollie immune to ball contact. Replace " +
+                 "the InTrick property with the real tag when the classifier lands.")]
+        public float TrickYawTurnsThreshold = 0.25f;
+
         [Header("Physics")]
         [Tooltip("Extra gravity. 1 = normal. Higher makes airs snappier and less floaty.")]
         public float GravityScale = 1.6f;
@@ -146,11 +190,49 @@ namespace FiftyFifty.Board
         [SerializeField] private int _wheelsOnGround;
         [SerializeField] private float _heading;
         [SerializeField] private float _timeInAir;
+        [SerializeField] private float _airYawTurns;
+        [SerializeField] private bool _disturbed;
 
         public bool Grounded => _grounded;
         public float Speed => _speed;
         public float TimeInAir => _timeInAir;
         public float Heading => _heading;
+
+        /// <summary>The physics body. Read its pose rather than the transform — with
+        /// interpolation on, the transform is the rendered pose, not the simulated one.</summary>
+        public Rigidbody Body => _rb;
+
+        /// <summary>Signed turns of yaw accumulated since leaving the ground. Reset by a pop.</summary>
+        public float AirYawTurns => _airYawTurns;
+
+        /// <summary>
+        /// STAND-IN for the trick tag #6 will provide. A plain ollie accumulates no yaw, so it
+        /// never counts as a trick — which is what keeps ollieing to block a goal free of risk.
+        /// </summary>
+        public bool InTrick => !_grounded && Mathf.Abs(_airYawTurns) >= TrickYawTurnsThreshold;
+
+        /// <summary>True for a moment after ball contact ruined the board's line.</summary>
+        public bool Disturbed => _disturbed;
+
+        /// <summary>The intent this board acted on last tick. Read it rather than calling
+        /// Read() again — the input source clears its one-shot latches when read, so a second
+        /// caller would silently eat an ollie or a punch.</summary>
+        public BoardInputState LastInput => _input;
+
+        /// <summary>Scales top speed from outside. Carrying the ball costs speed (#7).</summary>
+        [System.NonSerialized] public float ExternalTopSpeedScale = 1f;
+
+        /// <summary>Scales steering from outside, same idea.</summary>
+        [System.NonSerialized] public float ExternalTurnScale = 1f;
+
+        /// <summary>Set from outside to forbid the ollie — one of the carry debuffs on #7.</summary>
+        [System.NonSerialized] public bool OllieBlocked;
+
+        /// <summary>
+        /// Set from outside when tricks performed right now must not be credited. Nothing in
+        /// this class reads it; it is here so the classifier on #6 has one place to look.
+        /// </summary>
+        [System.NonSerialized] public bool TrickCreditBlocked;
 
         private Rigidbody _rb;
         private BoardInputState _input;
@@ -159,6 +241,11 @@ namespace FiftyFifty.Board
         private float _popTimer;
         private float _popIgnoreTimer;
         private float _settleTimer;
+        private float _reverseHoldTimer;
+        private float _wobbleAmplitude;
+        private float _wobblePhase;
+        private float _wobbleOffset;
+        private float _disturbedTimer;
         private float _visualLean;
         private Vector3[] _wheelOrigins;
         private float[] _wheelDistances;
@@ -241,6 +328,7 @@ namespace FiftyFifty.Board
             }
 
             ApplyOllie();
+            UpdateDisturbance(dt);
             ApplyOrientation(dt);
 
             _popTimer = Mathf.Max(0f, _popTimer - dt);
@@ -368,13 +456,47 @@ namespace FiftyFifty.Board
             float forwardSpeed = Vector3.Dot(_rb.linearVelocity, _forward);
             float speedFactor = Mathf.Clamp01(Mathf.Abs(forwardSpeed) / Mathf.Max(0.01f, FullSteerSpeed));
 
-            _heading += _input.Steer * TurnRate * speedFactor * dt;
+            float direction = InvertSteerInReverse && forwardSpeed < -0.2f ? -1f : 1f;
+
+            _heading += _input.Steer * TurnRate * ExternalTurnScale * speedFactor * direction * dt;
         }
 
         /// <summary>In the air the heading keeps turning, which is all a 180 is.</summary>
         private void SpinInAir(float dt)
         {
-            _heading += _input.Attitude.x * AirYawRate * dt;
+            float delta = _input.Attitude.x * AirYawRate * dt;
+            _heading += delta;
+            _airYawTurns += delta / 360f;
+        }
+
+        /// <summary>
+        /// A ball hit while mid-trick puts a damped wobble on the heading. It is an offset, not
+        /// a change to the heading itself, so it decays back to the line the player chose rather
+        /// than stealing it. Amplitude is clamped: contact costs you your line, not your bearings.
+        /// </summary>
+        public void Disturb(float strength01)
+        {
+            float added = Mathf.Clamp01(strength01) * MaxDisturbanceDegrees;
+            _wobbleAmplitude = Mathf.Min(MaxDisturbanceDegrees, _wobbleAmplitude + added);
+            _wobblePhase = 0f;
+            _disturbedTimer = DisturbedFlagSeconds;
+        }
+
+        private void UpdateDisturbance(float dt)
+        {
+            _disturbedTimer = Mathf.Max(0f, _disturbedTimer - dt);
+            _disturbed = _disturbedTimer > 0f;
+
+            if (_wobbleAmplitude <= 0.01f)
+            {
+                _wobbleAmplitude = 0f;
+                _wobbleOffset = 0f;
+                return;
+            }
+
+            _wobblePhase += DisturbanceFrequency * 360f * dt;
+            _wobbleAmplitude *= Mathf.Exp(-DisturbanceDecay * dt);
+            _wobbleOffset = _wobbleAmplitude * Mathf.Sin(_wobblePhase * Mathf.Deg2Rad);
         }
 
         private void ApplyDrive(float dt)
@@ -382,16 +504,40 @@ namespace FiftyFifty.Board
             Vector3 forward = Vector3.ProjectOnPlane(_forward, _groundNormal).normalized;
             float forwardSpeed = Vector3.Dot(_rb.linearVelocity, forward);
 
-            if (_input.Throttle > 0.01f && forwardSpeed < TopSpeed)
+            if (_input.Throttle > 0.01f && forwardSpeed < TopSpeed * ExternalTopSpeedScale)
             {
                 _rb.AddForce(forward * (_input.Throttle * Acceleration), ForceMode.Acceleration);
             }
 
             _rb.AddForce(-_rb.linearVelocity * RollingResistance, ForceMode.Acceleration);
 
-            if (_input.Brake > 0.01f)
+            if (_input.Brake <= 0.01f)
+            {
+                _reverseHoldTimer = 0f;
+                return;
+            }
+
+            // One button, two jobs: it scrubs speed while the board is still rolling forward,
+            // and once that is spent it backs up. Without the handover you can bury yourself in
+            // a wall and have no way out (#7 put walls in the test scene and found this).
+            if (forwardSpeed > ReverseThreshold || !ReverseEnabled)
+            {
+                _reverseHoldTimer = 0f;
+                _rb.AddForce(-_rb.linearVelocity * (_input.Brake * BrakeStrength), ForceMode.Acceleration);
+                return;
+            }
+
+            _reverseHoldTimer += dt;
+
+            if (_reverseHoldTimer < ReverseEngageDelay)
             {
                 _rb.AddForce(-_rb.linearVelocity * (_input.Brake * BrakeStrength), ForceMode.Acceleration);
+                return;
+            }
+
+            if (forwardSpeed > -ReverseTopSpeed * ExternalTopSpeedScale)
+            {
+                _rb.AddForce(-forward * (_input.Brake * ReverseAcceleration), ForceMode.Acceleration);
             }
         }
 
@@ -413,7 +559,7 @@ namespace FiftyFifty.Board
 
         private void ApplyOllie()
         {
-            if (!_input.PopPressed || !_grounded || _popTimer > 0f)
+            if (!_input.PopPressed || !_grounded || _popTimer > 0f || OllieBlocked)
             {
                 return;
             }
@@ -425,6 +571,7 @@ namespace FiftyFifty.Board
             _popTimer = PopCooldown;
             _popIgnoreTimer = PopGroundIgnoreTime;
             _grounded = false;
+            _airYawTurns = 0f;
         }
 
         /// <summary>
@@ -443,7 +590,7 @@ namespace FiftyFifty.Board
             float followSpeed = _grounded ? SlopeFollowSpeed : AirFlattenSpeed;
             _surfaceUp = Vector3.Slerp(_surfaceUp, targetUp, Mathf.Clamp01(followSpeed * dt)).normalized;
 
-            Vector3 headingForward = Quaternion.Euler(0f, _heading, 0f) * Vector3.forward;
+            Vector3 headingForward = Quaternion.Euler(0f, _heading + _wobbleOffset, 0f) * Vector3.forward;
             Vector3 forwardOnSurface = Vector3.ProjectOnPlane(headingForward, _surfaceUp);
 
             if (forwardOnSurface.sqrMagnitude < 0.0001f)
@@ -458,6 +605,7 @@ namespace FiftyFifty.Board
         {
             _settleTimer = LandingSettleTime;
             _timeInAir = 0f;
+            _airYawTurns = 0f;
 
             // Deliberately does NOT cancel the board's fall. It used to, and the spring then
             // fired in the same step at a force computed from the impact speed that had just
@@ -484,6 +632,11 @@ namespace FiftyFifty.Board
             _rb.angularVelocity = Vector3.zero;
             _heading = _spawnHeading;
             _surfaceUp = Vector3.up;
+            _reverseHoldTimer = 0f;
+            _airYawTurns = 0f;
+            _wobbleAmplitude = 0f;
+            _wobbleOffset = 0f;
+            _disturbedTimer = 0f;
 
             Quaternion upright = Quaternion.Euler(0f, _spawnHeading, 0f);
             _rb.position = _spawnPosition;

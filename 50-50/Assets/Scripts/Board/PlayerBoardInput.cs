@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 
 namespace FiftyFifty.Board
 {
@@ -16,6 +17,12 @@ namespace FiftyFifty.Board
     ///   Right trigger — accelerate (analog)
     ///   Left trigger  — brake
     ///   A / Space     — ollie
+    ///   RB / E        — grab the ball, held (#7)
+    ///   LB / F        — punch: the shot, and what strips a carrier (#7)
+    ///
+    /// Buttons are Inspector fields rather than an Input Actions asset: the mapping is still
+    /// moving, and a rebinding menu is its own ticket. Swap the whole class for an actions
+    /// asset when it settles — the bindings are the only thing that has to move.
     /// </summary>
     public class PlayerBoardInput : BoardInputSource
     {
@@ -26,14 +33,28 @@ namespace FiftyFifty.Board
         [Header("Inversion")]
         public bool InvertAttitudePitch = false;
 
+        [Header("Bindings — ball")]
+        [Tooltip("Gamepad button held to carry the ball.")]
+        public GamepadButton GrabButton = GamepadButton.RightShoulder;
+
+        [Tooltip("Gamepad button that punches. Punch is the shot.")]
+        public GamepadButton PunchButton = GamepadButton.LeftShoulder;
+
+        [Tooltip("Keyboard equivalent of the grab button.")]
+        public Key GrabKey = Key.E;
+
+        [Tooltip("Keyboard equivalent of the punch button.")]
+        public Key PunchKey = Key.F;
+
         [Header("Read-only (for debugging in play mode)")]
         [SerializeField] private Vector2 _debugLeftStick;
         [SerializeField] private float _debugThrottle;
         [SerializeField] private bool _debugPopLatched;
 
-        // One-shot latch. Set in Update (which can run many times per fixed step, or none),
-        // consumed in Read. Without it, a quick tap between fixed steps is silently lost.
+        // One-shot latches. Set in Update (which can run many times per fixed step, or none),
+        // consumed in Read. Without them, a quick tap between fixed steps is silently lost.
         private bool _popLatched;
+        private bool _punchLatched;
 
         private void Update()
         {
@@ -48,6 +69,16 @@ namespace FiftyFifty.Board
             if (keys != null && keys.spaceKey.wasPressedThisFrame)
             {
                 _popLatched = true;
+            }
+
+            if (pad != null && pad[PunchButton].wasPressedThisFrame)
+            {
+                _punchLatched = true;
+            }
+
+            if (keys != null && keys[PunchKey].wasPressedThisFrame)
+            {
+                _punchLatched = true;
             }
 
             _debugPopLatched = _popLatched;
@@ -89,6 +120,9 @@ namespace FiftyFifty.Board
                 if (keys.sKey.isPressed) brake = 1f;
             }
 
+            bool grabHeld = (pad != null && pad[GrabButton].isPressed)
+                            || (keys != null && keys[GrabKey].isPressed);
+
             left = ApplyDeadzone(Vector2.ClampMagnitude(left, 1f));
             right = ApplyDeadzone(Vector2.ClampMagnitude(right, 1f));
             _debugLeftStick = left;
@@ -101,10 +135,13 @@ namespace FiftyFifty.Board
                 Throttle = Mathf.Clamp01(throttle),
                 Brake = Mathf.Clamp01(brake),
                 PopPressed = _popLatched,
+                GrabHeld = grabHeld,
+                PunchPressed = _punchLatched,
                 CameraLook = right,
             };
 
             _popLatched = false;
+            _punchLatched = false;
 
             return state;
         }

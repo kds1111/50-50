@@ -28,6 +28,12 @@ namespace FiftyFifty.Board
         /// <summary>True on the tick the ollie is requested.</summary>
         public bool PopPressed;
 
+        /// <summary>Held, not latched: the grab is a state you hold, not an action you fire (#7).</summary>
+        public bool GrabHeld;
+
+        /// <summary>True on the tick a punch is requested. Punch is the shot (#7).</summary>
+        public bool PunchPressed;
+
         /// <summary>Camera orbit, right stick. Presentation only, not simulation state.</summary>
         public Vector2 CameraLook;
     }
