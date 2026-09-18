@@ -42,8 +42,11 @@ namespace FiftyFifty.CameraRig
         public float HeadingDamping = 4f;
 
         [Header("Airborne")]
-        [Tooltip("How far the camera will follow a spin while airborne, in degrees either way. " +
-                 "0 keeps the view perfectly still; 180 would follow the spin completely.")]
+        [Tooltip("How far the camera will follow a spin while airborne, in degrees either way.\n\n" +
+                 "Inert while BoardController.AirSpinIsCosmetic is on, which is the default: a " +
+                 "spin then turns the board and rider without touching the heading, so there is " +
+                 "nothing here for the camera to follow and the view holds perfectly still. This " +
+                 "only does anything if spinning is switched back to steering you.")]
         [Range(0f, 180f)] public float AirHeadingFollow = 35f;
 
         [Tooltip("How quickly the camera follows within that limit. Lower than the ground " +

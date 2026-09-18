@@ -128,6 +128,21 @@ namespace FiftyFifty.Board
                  "Off restores the old behaviour, where spinning steers you.")]
         public bool AirSpinIsCosmetic = true;
 
+        [Tooltip("How far round a spin has to get before landing commits to it, in degrees.\n\n" +
+                 "The board can only rest in line with its own wheels — square with the way you " +
+                 "are driving, or a half turn from it. Anything else is the board pointing across " +
+                 "its direction of travel, which is a sideways slide, which is what the " +
+                 "powerslide is for and should never happen by accident.\n\n" +
+                 "Past this, a landing settles backwards. Short of it, it settles back the way it " +
+                 "started. Above 90 so that a spin you did not commit to gives you nothing and " +
+                 "costs you nothing.")]
+        [Range(90f, 179f)] public float SpinCommitDegrees = 135f;
+
+        [Tooltip("Degrees per second the board straightens onto its line after landing crooked. " +
+                 "Fast reads as a snap, slow reads as sloppy — this is the rider correcting, so " +
+                 "it wants to be quick but visible.")]
+        public float SpinResolveSpeed = 600f;
+
         [Header("Traction — landing slide (#18)")]
         [Tooltip("Land crooked and the board keeps its heading while momentum carries on the old " +
                  "line, grip returning over the next moment. Off restores the on-rails board.")]
@@ -280,6 +295,9 @@ namespace FiftyFifty.Board
         /// direction reverses while nothing on screen visibly moves.
         /// </summary>
         [SerializeField] private float _visualYaw;
+
+        /// <summary>Where the offset is settling to. Always 0 or a half turn — never anything else.</summary>
+        [SerializeField] private float _visualYawTarget;
         [SerializeField] private bool _powersliding;
         [SerializeField] private float _grip;
         [SerializeField] private bool _disturbed;
@@ -678,7 +696,8 @@ namespace FiftyFifty.Board
             }
 
             _heading += 180f;
-            _visualYaw -= 180f;
+            _visualYaw = NormalizeAngle(_visualYaw - 180f);
+            _visualYawTarget = NormalizeAngle(_visualYawTarget - 180f);
         }
 
         /// <summary>
@@ -845,6 +864,38 @@ namespace FiftyFifty.Board
         /// it loses on touchdown. Landing backwards is simply the far end of the same scale — for
         /// now. Whether it should instead leave the rider switch is #19.
         /// </summary>
+        /// <summary>
+        /// Decide which way the board is left pointing after a spin.
+        ///
+        /// A skateboard rolls along its wheels, so there are only two orientations it can rest
+        /// in: square with the way you are driving, or a half turn from it, rolling tail-first.
+        /// Anything between those points the wheels across your direction of travel, which is a
+        /// sideways slide — that is what the powerslide is for, and it must never happen because
+        /// a spin happened to end early.
+        ///
+        /// So a landing picks one. Past SpinCommitDegrees the spin is credited and you land
+        /// backwards; short of it the board comes back to where it started, and the half-spin
+        /// cost nothing. The board then turns onto that choice over a moment rather than
+        /// snapping, which reads as the rider correcting rather than the game teleporting.
+        ///
+        /// Whole turns are discarded first, which is free: 370 degrees and 10 degrees are the
+        /// same picture, so normalising them cannot be seen.
+        /// </summary>
+        private void ResolveSpinOnLanding()
+        {
+            _visualYaw = NormalizeAngle(_visualYaw);
+
+            _visualYawTarget = Mathf.Abs(_visualYaw) >= SpinCommitDegrees
+                ? Mathf.Sign(_visualYaw) * 180f
+                : 0f;
+        }
+
+        /// <summary>Into (-180, 180]. Visually free — the rotation is unchanged.</summary>
+        private static float NormalizeAngle(float degrees)
+        {
+            return Mathf.Repeat(degrees + 180f, 360f) - 180f;
+        }
+
         private void BeginLandingSlide()
         {
             if (!LandingSlideEnabled)
@@ -936,6 +987,7 @@ namespace FiftyFifty.Board
             _timeInAir = 0f;
             _airYawTurns = 0f;
 
+            ResolveSpinOnLanding();
             BeginLandingSlide();
 
             // Deliberately does NOT cancel the board's fall. It used to, and the spring then
@@ -950,6 +1002,12 @@ namespace FiftyFifty.Board
             if (DeckVisual == null)
             {
                 return;
+            }
+
+            if (_grounded)
+            {
+                _visualYaw = Mathf.MoveTowards(
+                    _visualYaw, _visualYawTarget, SpinResolveSpeed * Time.deltaTime);
             }
 
             float wanted = _grounded ? -_input.Steer * LeanAngle : 0f;
@@ -1000,6 +1058,7 @@ namespace FiftyFifty.Board
             _grip = SidewaysGrip;
             _airYawTurns = 0f;
             _visualYaw = 0f;
+            _visualYawTarget = 0f;
             _wobbleAmplitude = 0f;
             _wobbleOffset = 0f;
             _disturbedTimer = 0f;
