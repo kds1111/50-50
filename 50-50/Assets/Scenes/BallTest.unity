@@ -1482,7 +1482,7 @@ MonoBehaviour:
   BrakeStrength: 9
   TurnRate: 130
   FullSteerSpeed: 3
-  SidewaysGrip: 0.92
+  SidewaysGrip: 0.2
   SlopeFollowSpeed: 12
   MaxSlopeAngle: 60
   PopVelocity: 5.2

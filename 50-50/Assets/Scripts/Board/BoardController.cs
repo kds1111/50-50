@@ -106,8 +106,10 @@ namespace FiftyFifty.Board
         [Tooltip("Speed at which steering reaches full strength. Below this it scales down.")]
         public float FullSteerSpeed = 3f;
 
-        [Tooltip("How much sideways velocity is scrubbed. 1 = fully on rails, 0 = frictionless ice.")]
-        [Range(0f, 1f)] public float SidewaysGrip = 0.92f;
+        [Tooltip("How much sideways velocity is scrubbed, as a fraction per 1/60s. 1 = fully on " +
+                 "rails, 0 = frictionless ice. Tuned down from 0.92 to 0.2 by playing #18: the " +
+                 "rails version drove like the board was slotted into the floor.")]
+        [Range(0f, 1f)] public float SidewaysGrip = 0.2f;
 
         [Tooltip("Steer like a car backing up, where the stick swings the tail. Off by default: " +
                  "the board's rotation is commanded rather than simulated, so 'left turns left' " +
@@ -130,9 +132,9 @@ namespace FiftyFifty.Board
 
         [Tooltip("Sideways grip at a full-strength slide, against SidewaysGrip when hooked up. " +
                  "Careful with this number: grip is a fraction removed per 1/60s, so it bites far " +
-                 "harder than it reads. 0.92 is on rails, 0.2 still scrubs a quarter of the slide " +
-                 "every step, and a slide that carries momentum lives below about 0.1.")]
-        [Range(0f, 1f)] public float SlideGripFloor = 0.05f;
+                 "harder than it reads — a floor of 0.2 still scrubs a quarter of the slide every " +
+                 "step. 0 is a free slide that keeps every bit of sideways momentum.")]
+        [Range(0f, 1f)] public float SlideGripFloor = 0f;
 
         [Tooltip("Seconds of slide at the edge of the deadzone — a barely crooked landing.")]
         public float SlideSecondsAtDeadzone = 0.25f;
@@ -151,8 +153,9 @@ namespace FiftyFifty.Board
         [Tooltip("L3 (or Left Shift) plus a steering direction breaks traction for a quick turn.")]
         public bool PowerslideEnabled = true;
 
-        [Tooltip("Sideways grip while the powerslide is held.")]
-        [Range(0f, 1f)] public float PowerslideGrip = 0.012f;
+        [Tooltip("Sideways grip while the powerslide is held. 0 keeps all of your momentum " +
+                 "through the drift, which is what it was tuned to by playing #18.")]
+        [Range(0f, 1f)] public float PowerslideGrip = 0f;
 
         [Tooltip("Turn rate multiplier while held. Breaking traction alone gives a SLOWER turn, " +
                  "not a faster one — the board pivots at the same rate while momentum ignores " +
