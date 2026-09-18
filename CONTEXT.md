@@ -16,17 +16,17 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 **Airborne** — the state in which rotation accumulates toward a trick. Gated by an explicit predicate, not inferred; leaving it is what triggers classification.
 
-**Landing** — the resolution of a trick when the board returns to a surface. Graded, not gated: **Clean**, **Sketchy** (pays a fraction), or **Bail**. Graded because in an arena a landing is often disturbed by the ball or the opponent rather than by the player's own error.
+**Landing** — the resolution of a trick when the board returns to a surface. A clean binary: you **land** it or you **bail**. A named trick lands if it ran its full duration before touchdown and bails if it did not ([#6](https://github.com/kds1111/50-50/issues/6)); a spin can never bail. *Sketchy* was a third grade in the original design and was struck on [#8](https://github.com/kds1111/50-50/issues/8) — the commitment model produces a binary, and a middle grade would have needed its own threshold, payout fraction and feedback for nothing.
 
 **Bail** — a failed landing. Costs some or all of the pending bank; how much is an open decision.
 
-**Bank** (or **pending bank**) — trick points accumulated but not yet scored. Visible to the player, at risk until cemented, and lost on events the scoring rules define. The bank is the hook of the whole game.
+**Bank** (or **pending bank**) — a **multiplier** accumulated from landed tricks but not yet scored. Starts at 1.00; each landed trick adds to it ([#8](https://github.com/kds1111/50-50/issues/8)). Visible to the player *and to the opponent*, at risk until cemented, and lost entirely on a bail or on conceding. The bank is the hook of the whole game.
 
-**Cement** — to convert the pending bank into permanent score. Scoring a goal is the only thing that cements.
+**Cement** — to convert the pending bank into permanent score. Scoring a goal is the only thing that cements, and a goal pays exactly the bank. Cementing resets the bank to 1.00 ([#8](https://github.com/kds1111/50-50/issues/8)).
 
 **Score** — cemented points. Permanent, cannot be lost. Distinct from the bank in every context; never use "score" for the pending value.
 
-**Forfeit** — to lose the pending bank without cementing it. Which events forfeit (bailing, conceding, turnover) is an open decision in the scoring rules.
+**Forfeit** — to lose the pending bank without cementing it. Two events forfeit, both total: **bailing**, and **conceding** a goal ([#8](https://github.com/kds1111/50-50/issues/8)). A turnover does not. A goal therefore resets both players — the scorer by cementing, the conceder by forfeiting.
 
 **Arena** — the playfield. A concrete skatepark-stadium: a goal at each end, ramps and rideable surfaces for generating air, walls and a ceiling as boundaries.
 
