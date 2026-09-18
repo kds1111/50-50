@@ -19,6 +19,7 @@ namespace FiftyFifty.Board
     ///   A / Space     — ollie
     ///   RB / E        — grab the ball, held (#7)
     ///   LB / F        — punch: the shot, and what strips a carrier (#7)
+    ///   L3 / Shift     — powerslide, held, with the left stick for direction (#18)
     ///
     /// Buttons are Inspector fields rather than an Input Actions asset: the mapping is still
     /// moving, and a rebinding menu is its own ticket. Swap the whole class for an actions
@@ -45,6 +46,14 @@ namespace FiftyFifty.Board
 
         [Tooltip("Keyboard equivalent of the punch button.")]
         public Key PunchKey = Key.F;
+
+        [Header("Bindings — movement")]
+        [Tooltip("Gamepad button held to powerslide. Left stick click by default, so the hand " +
+                 "steering is the hand drifting.")]
+        public GamepadButton PowerslideButton = GamepadButton.LeftStick;
+
+        [Tooltip("Keyboard equivalent of the powerslide button.")]
+        public Key PowerslideKey = Key.LeftShift;
 
         [Header("Read-only (for debugging in play mode)")]
         [SerializeField] private Vector2 _debugLeftStick;
@@ -123,6 +132,9 @@ namespace FiftyFifty.Board
             bool grabHeld = (pad != null && pad[GrabButton].isPressed)
                             || (keys != null && keys[GrabKey].isPressed);
 
+            bool powerslideHeld = (pad != null && pad[PowerslideButton].isPressed)
+                                  || (keys != null && keys[PowerslideKey].isPressed);
+
             left = ApplyDeadzone(Vector2.ClampMagnitude(left, 1f));
             right = ApplyDeadzone(Vector2.ClampMagnitude(right, 1f));
             _debugLeftStick = left;
@@ -137,6 +149,7 @@ namespace FiftyFifty.Board
                 PopPressed = _popLatched,
                 GrabHeld = grabHeld,
                 PunchPressed = _punchLatched,
+                PowerslideHeld = powerslideHeld,
                 CameraLook = right,
             };
 

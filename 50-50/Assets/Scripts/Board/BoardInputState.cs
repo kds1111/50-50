@@ -34,6 +34,10 @@ namespace FiftyFifty.Board
         /// <summary>True on the tick a punch is requested. Punch is the shot (#7).</summary>
         public bool PunchPressed;
 
+        /// <summary>Held: break traction for a quick turn (#18). Held, not latched — a drift is
+        /// a state you hold, and letting go is how you hook back up.</summary>
+        public bool PowerslideHeld;
+
         /// <summary>Camera orbit, right stick. Presentation only, not simulation state.</summary>
         public Vector2 CameraLook;
     }

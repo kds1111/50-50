@@ -42,10 +42,20 @@ namespace FiftyFifty.Board
             GUILayout.Label($"{Board.Speed:0.0} m/s", _big);
             GUILayout.Label(Board.Grounded ? "grounded" : $"AIR  {Board.TimeInAir:0.00}s", _small);
 
+            if (Board.Powersliding)
+            {
+                GUILayout.Label($"POWERSLIDE   grip {Board.Grip:0.00}   slip {Board.SlipAngle:0}°", _small);
+            }
+            else if (Board.Sliding)
+            {
+                GUILayout.Label($"sliding   grip {Board.Grip:0.00}   slip {Board.SlipAngle:0}°", _small);
+            }
+
             GUILayout.Space(10);
             GUILayout.Label(
                 "pad:  LS steer / air spin   RS camera   RT accelerate   LT brake   A ollie\n" +
                 "keys: A,D steer / air spin   W accelerate   S brake   arrows camera   SPACE ollie\n" +
+                "L3 / SHIFT powerslide   (brake held at rest reverses)\n" +
                 "R respawn",
                 _small);
 

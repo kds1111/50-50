@@ -114,6 +114,66 @@ namespace FiftyFifty.Board
                  "stays true whichever way you are rolling.")]
         public bool InvertSteerInReverse = false;
 
+        [Header("Traction — landing slide (#18)")]
+        [Tooltip("Land crooked and the board keeps its heading while momentum carries on the old " +
+                 "line, grip returning over the next moment. Off restores the on-rails board.")]
+        public bool LandingSlideEnabled = true;
+
+        [Tooltip("Degrees between the nose and the direction of travel that count as a straight " +
+                 "landing. Every real landing is a degree or two out; without this the board " +
+                 "skates on every touchdown.")]
+        public float SlideDeadzoneDegrees = 15f;
+
+        [Tooltip("Angle at which the slide is at full strength. Beyond it nothing gets worse — " +
+                 "landing sideways and landing backwards slide the same.")]
+        public float SlideFullAngleDegrees = 90f;
+
+        [Tooltip("Sideways grip at a full-strength slide, against SidewaysGrip when hooked up. " +
+                 "Careful with this number: grip is a fraction removed per 1/60s, so it bites far " +
+                 "harder than it reads. 0.92 is on rails, 0.2 still scrubs a quarter of the slide " +
+                 "every step, and a slide that carries momentum lives below about 0.1.")]
+        [Range(0f, 1f)] public float SlideGripFloor = 0.05f;
+
+        [Tooltip("Seconds of slide at the edge of the deadzone — a barely crooked landing.")]
+        public float SlideSecondsAtDeadzone = 0.25f;
+
+        [Tooltip("Seconds of slide at a full-strength landing.")]
+        public float SlideSecondsAtFullAngle = 0.8f;
+
+        [Tooltip("Fraction of sideways speed taken at the moment of a full-strength landing, so " +
+                 "landing crooked costs something. 0 makes a slide free.")]
+        [Range(0f, 1f)] public float SlideLandingScrub = 0.18f;
+
+        [Tooltip("Slowest landing that can slide, m/s. Below it the board just sets down.")]
+        public float SlideMinSpeed = 2f;
+
+        [Header("Traction — powerslide (#18)")]
+        [Tooltip("L3 (or Left Shift) plus a steering direction breaks traction for a quick turn.")]
+        public bool PowerslideEnabled = true;
+
+        [Tooltip("Sideways grip while the powerslide is held.")]
+        [Range(0f, 1f)] public float PowerslideGrip = 0.012f;
+
+        [Tooltip("Turn rate multiplier while held. Breaking traction alone gives a SLOWER turn, " +
+                 "not a faster one — the board pivots at the same rate while momentum ignores " +
+                 "it — so the sharpness has to be explicit.")]
+        public float PowerslideTurnMultiplier = 1.7f;
+
+        [Tooltip("Slowest speed at which the powerslide does anything, m/s. Without a floor it " +
+                 "is a free pivot button and the steering model stops mattering.")]
+        public float PowerslideMinSpeed = 3f;
+
+        [Tooltip("Ignore the throttle while powersliding, so the drift spends the speed you had. " +
+                 "This is what stops drifting every corner being strictly better than turning.")]
+        public bool PowerslideBlocksThrottle = true;
+
+        [Tooltip("Fraction of speed per second bled while powersliding. 0 by default — the " +
+                 "throttle block is the intended cost; this is the second dial if it is not enough.")]
+        [Range(0f, 1f)] public float PowerslideDragPerSecond = 0f;
+
+        [Tooltip("Seconds for grip to ramp back after the powerslide is released.")]
+        public float PowerslideRecoverySeconds = 0.35f;
+
         [Header("Slope")]
         [Tooltip("How quickly the board tilts to match the ground it is riding. Higher = snappier.")]
         public float SlopeFollowSpeed = 12f;
@@ -191,6 +251,8 @@ namespace FiftyFifty.Board
         [SerializeField] private float _heading;
         [SerializeField] private float _timeInAir;
         [SerializeField] private float _airYawTurns;
+        [SerializeField] private bool _powersliding;
+        [SerializeField] private float _grip;
         [SerializeField] private bool _disturbed;
 
         public bool Grounded => _grounded;
@@ -210,6 +272,25 @@ namespace FiftyFifty.Board
         /// never counts as a trick — which is what keeps ollieing to block a goal free of risk.
         /// </summary>
         public bool InTrick => !_grounded && Mathf.Abs(_airYawTurns) >= TrickYawTurnsThreshold;
+
+        /// <summary>Grip is below normal: either a crooked landing or a held powerslide.</summary>
+        public bool Sliding => _grip < SidewaysGrip - 0.001f;
+
+        /// <summary>The powerslide is held and biting.</summary>
+        public bool Powersliding => _powersliding;
+
+        /// <summary>Sideways grip in force this tick, for readouts.</summary>
+        public float Grip => _grip;
+
+        /// <summary>Degrees between the nose and the direction of travel. 0 when barely moving.</summary>
+        public float SlipAngle
+        {
+            get
+            {
+                Vector3 flat = Vector3.ProjectOnPlane(_rb != null ? _rb.linearVelocity : Vector3.zero, Vector3.up);
+                return flat.magnitude < 0.2f ? 0f : Vector3.Angle(Vector3.ProjectOnPlane(_forward, Vector3.up), flat);
+            }
+        }
 
         /// <summary>True for a moment after ball contact ruined the board's line.</summary>
         public bool Disturbed => _disturbed;
@@ -242,6 +323,10 @@ namespace FiftyFifty.Board
         private float _popIgnoreTimer;
         private float _settleTimer;
         private float _reverseHoldTimer;
+        private float _slideTimer;
+        private float _slideDuration;
+        private float _slideGrip;
+        private float _powerslideRecoveryTimer;
         private float _wobbleAmplitude;
         private float _wobblePhase;
         private float _wobbleOffset;
@@ -277,6 +362,7 @@ namespace FiftyFifty.Board
             }
 
             _spawnPosition = transform.position;
+            _grip = SidewaysGrip;
             _spawnHeading = transform.eulerAngles.y;
             _heading = _spawnHeading;
             _surfaceUp = Vector3.up;
@@ -316,12 +402,14 @@ namespace FiftyFifty.Board
                     OnTouchdown();
                 }
 
+                UpdateTraction(dt);
                 Steer(dt);
                 ApplyDrive(dt);
                 ApplyGrip(dt);
             }
             else
             {
+                EndTraction();
                 _timeInAir += dt;
                 SpinInAir(dt);
                 _rb.AddForce(-_rb.linearVelocity * AirDrag, ForceMode.Acceleration);
@@ -454,11 +542,22 @@ namespace FiftyFifty.Board
         private void Steer(float dt)
         {
             float forwardSpeed = Vector3.Dot(_rb.linearVelocity, _forward);
-            float speedFactor = Mathf.Clamp01(Mathf.Abs(forwardSpeed) / Mathf.Max(0.01f, FullSteerSpeed));
+
+            // Steering authority normally comes from how fast you are going FORWARD, which is
+            // right until the board is sideways: mid-drift the nose points away from the travel,
+            // forward speed collapses, and the powerslide's extra turn rate is cancelled out by
+            // its own effect. While drifting, the board is still moving quickly — measure that.
+            float steerSpeed = _powersliding
+                ? Vector3.ProjectOnPlane(_rb.linearVelocity, _groundNormal).magnitude
+                : Mathf.Abs(forwardSpeed);
+
+            float speedFactor = Mathf.Clamp01(steerSpeed / Mathf.Max(0.01f, FullSteerSpeed));
 
             float direction = InvertSteerInReverse && forwardSpeed < -0.2f ? -1f : 1f;
 
-            _heading += _input.Steer * TurnRate * ExternalTurnScale * speedFactor * direction * dt;
+            float turnRate = TurnRate * (_powersliding ? PowerslideTurnMultiplier : 1f);
+
+            _heading += _input.Steer * turnRate * ExternalTurnScale * speedFactor * direction * dt;
         }
 
         /// <summary>In the air the heading keeps turning, which is all a 180 is.</summary>
@@ -504,7 +603,9 @@ namespace FiftyFifty.Board
             Vector3 forward = Vector3.ProjectOnPlane(_forward, _groundNormal).normalized;
             float forwardSpeed = Vector3.Dot(_rb.linearVelocity, forward);
 
-            if (_input.Throttle > 0.01f && forwardSpeed < TopSpeed * ExternalTopSpeedScale)
+            bool throttleAllowed = !(_powersliding && PowerslideBlocksThrottle);
+
+            if (throttleAllowed && _input.Throttle > 0.01f && forwardSpeed < TopSpeed * ExternalTopSpeedScale)
             {
                 _rb.AddForce(forward * (_input.Throttle * Acceleration), ForceMode.Acceleration);
             }
@@ -552,9 +653,124 @@ namespace FiftyFifty.Board
             Vector3 right = _right;
             float lateral = Vector3.Dot(velocity, right);
 
-            // Frame-rate independent: SidewaysGrip is "fraction removed per 1/60s".
-            float scrub = 1f - Mathf.Pow(1f - Mathf.Clamp01(SidewaysGrip), dt * 60f);
+            // Frame-rate independent: grip is "fraction removed per 1/60s".
+            float scrub = 1f - Mathf.Pow(1f - Mathf.Clamp01(_grip), dt * 60f);
             _rb.linearVelocity = velocity - (right * (lateral * scrub));
+        }
+
+        /// <summary>
+        /// One traction model, two ways in (#18). Grip is temporarily low and then it comes back:
+        /// a crooked landing lowers it for a moment scaled by how crooked, and the powerslide
+        /// lowers it for as long as it is held. Sharing the model is what makes landing straight
+        /// into a drift work without a line of code for that case.
+        ///
+        /// Nothing here touches the heading. The board still points exactly where the player
+        /// aimed it (#16) — all that changes is whether it travels that way.
+        /// </summary>
+        private void UpdateTraction(float dt)
+        {
+            float speed = Vector3.ProjectOnPlane(_rb.linearVelocity, _groundNormal).magnitude;
+
+            bool wantsPowerslide = PowerslideEnabled
+                                   && _input.PowerslideHeld
+                                   && speed >= PowerslideMinSpeed;
+
+            if (_powersliding && !wantsPowerslide)
+            {
+                _powerslideRecoveryTimer = PowerslideRecoverySeconds;
+            }
+
+            _powersliding = wantsPowerslide;
+
+            if (_powersliding)
+            {
+                _slideTimer = 0f;
+                _grip = PowerslideGrip;
+
+                if (PowerslideDragPerSecond > 0f)
+                {
+                    _rb.AddForce(-_rb.linearVelocity * PowerslideDragPerSecond, ForceMode.Acceleration);
+                }
+
+                return;
+            }
+
+            if (_powerslideRecoveryTimer > 0f)
+            {
+                _powerslideRecoveryTimer = Mathf.Max(0f, _powerslideRecoveryTimer - dt);
+
+                float recovered = PowerslideRecoverySeconds <= 0f
+                    ? 1f
+                    : 1f - (_powerslideRecoveryTimer / PowerslideRecoverySeconds);
+
+                _grip = Mathf.Lerp(PowerslideGrip, SidewaysGrip, recovered);
+                return;
+            }
+
+            if (_slideTimer > 0f)
+            {
+                _slideTimer = Mathf.Max(0f, _slideTimer - dt);
+
+                float through = _slideDuration <= 0f ? 1f : 1f - (_slideTimer / _slideDuration);
+                _grip = Mathf.Lerp(_slideGrip, SidewaysGrip, through);
+                return;
+            }
+
+            _grip = SidewaysGrip;
+        }
+
+        /// <summary>Airborne: no surface, no traction state to carry into the landing.</summary>
+        private void EndTraction()
+        {
+            _powersliding = false;
+            _grip = SidewaysGrip;
+        }
+
+        /// <summary>
+        /// How crooked was that landing? The angle between the nose and the direction of travel
+        /// decides how long the board slides, how little grip it has, and how much sideways speed
+        /// it loses on touchdown. Landing backwards is simply the far end of the same scale — for
+        /// now. Whether it should instead leave the rider switch is #19.
+        /// </summary>
+        private void BeginLandingSlide()
+        {
+            if (!LandingSlideEnabled)
+            {
+                return;
+            }
+
+            Vector3 velocity = _rb.linearVelocity;
+            Vector3 flat = Vector3.ProjectOnPlane(velocity, _groundNormal);
+
+            if (flat.magnitude < SlideMinSpeed)
+            {
+                return;
+            }
+
+            Vector3 nose = Vector3.ProjectOnPlane(_forward, _groundNormal);
+
+            if (nose.sqrMagnitude < 0.0001f)
+            {
+                return;
+            }
+
+            float angle = Vector3.Angle(nose, flat);
+            float span = Mathf.Max(0.01f, SlideFullAngleDegrees - SlideDeadzoneDegrees);
+            float crooked = Mathf.Clamp01((angle - SlideDeadzoneDegrees) / span);
+
+            if (crooked <= 0f)
+            {
+                return;
+            }
+
+            _slideGrip = Mathf.Lerp(SidewaysGrip, SlideGripFloor, crooked);
+            _slideDuration = Mathf.Lerp(SlideSecondsAtDeadzone, SlideSecondsAtFullAngle, crooked);
+            _slideTimer = _slideDuration;
+            _grip = _slideGrip;
+
+            // The cost of landing crooked, taken once rather than bled, so it is predictable.
+            float lateral = Vector3.Dot(velocity, _right);
+            _rb.linearVelocity = velocity - (_right * (lateral * SlideLandingScrub * crooked));
         }
 
         private void ApplyOllie()
@@ -607,6 +823,8 @@ namespace FiftyFifty.Board
             _timeInAir = 0f;
             _airYawTurns = 0f;
 
+            BeginLandingSlide();
+
             // Deliberately does NOT cancel the board's fall. It used to, and the spring then
             // fired in the same step at a force computed from the impact speed that had just
             // been cancelled — which is what launched the board back up. The suspension alone
@@ -633,6 +851,10 @@ namespace FiftyFifty.Board
             _heading = _spawnHeading;
             _surfaceUp = Vector3.up;
             _reverseHoldTimer = 0f;
+            _slideTimer = 0f;
+            _powerslideRecoveryTimer = 0f;
+            _powersliding = false;
+            _grip = SidewaysGrip;
             _airYawTurns = 0f;
             _wobbleAmplitude = 0f;
             _wobbleOffset = 0f;

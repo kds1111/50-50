@@ -69,6 +69,15 @@ namespace FiftyFifty.Ball
                           (Board.InTrick ? "   IN TRICK (vulnerable)" : "   ollie (safe)"),
                     _small);
 
+                if (Board.Powersliding)
+                {
+                    GUILayout.Label($"POWERSLIDE   grip {Board.Grip:0.00}   slip {Board.SlipAngle:0}°", _small);
+                }
+                else if (Board.Sliding)
+                {
+                    GUILayout.Label($"sliding   grip {Board.Grip:0.00}   slip {Board.SlipAngle:0}°", _small);
+                }
+
                 if (Board.Disturbed)
                 {
                     GUILayout.Label("DISTURBED — landing would be downgraded", _small);
@@ -121,7 +130,7 @@ namespace FiftyFifty.Ball
             GUILayout.Label(
                 "pad:  LS steer / air spin   RS camera   RT accelerate   LT brake   A ollie   RB grab   LB punch\n" +
                 "keys: A,D steer / air spin   W accelerate   S brake   arrows camera   SPACE ollie   E grab   F punch\n" +
-                "R reset board + ball    T reset ball only",
+                "L3 / SHIFT powerslide    R reset board + ball    T reset ball only",
                 _small);
 
             GUILayout.EndArea();
