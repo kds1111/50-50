@@ -466,6 +466,49 @@ namespace FiftyFifty.Ball
         private Vector3 PunchOrigin =>
             BodyPosition + (BodyRotation * new Vector3(0f, CarryOffset.y, 0f));
 
+        /// <summary>
+        /// A bail while carrying fumbles the ball. #7 filed this rule on #6 because bail did not
+        /// exist yet; this is it arriving.
+        ///
+        /// Subscribed rather than polled, and optional: a board with no trick component simply
+        /// never raises it, so nothing here changes in a scene that has none.
+        /// </summary>
+        private void OnEnable()
+        {
+            _trickController = Board != null
+                ? Board.GetComponent<FiftyFifty.Board.Tricks.BoardTrickController>()
+                : null;
+
+            if (_trickController != null)
+            {
+                _trickController.Bailed += OnBoardBailed;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (_trickController != null)
+            {
+                _trickController.Bailed -= OnBoardBailed;
+            }
+        }
+
+        private void OnBoardBailed()
+        {
+            if (!_carrying || Ball == null)
+            {
+                return;
+            }
+
+            Ball.Release(BodyVelocity + (AimDirection * FumbleForwardSpeed), Ball.FumbleClip);
+            _carrying = false;
+            _timeSinceRelease = 0f;
+            _grabCooldownRemaining = Mathf.Max(_grabCooldownRemaining, GrabCooldown);
+            _lastEvent = "BAIL FUMBLE";
+        }
+
+        private FiftyFifty.Board.Tricks.BoardTrickController _trickController;
+
         /// <summary>Someone took it off us. Called by whoever did.</summary>
         public void ForceRelease()
         {

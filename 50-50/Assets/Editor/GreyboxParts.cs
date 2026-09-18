@@ -46,15 +46,34 @@ namespace FiftyFifty.EditorTools
             }
         }
 
-        public static void CreateKicker(Vector3 position, float yaw = 0f)
+        /// <summary>
+        /// A launch ramp. The pitch is a parameter because #6 fixed trick durations in seconds,
+        /// which only works if a player can learn what a given ramp gives them — so a test scene
+        /// wants a few clearly different, memorable airtimes rather than one.
+        /// </summary>
+        public static GameObject CreateKicker(
+            Vector3 position, float yaw = 0f, float pitchDegrees = 15f, string label = "Kicker")
         {
             GameObject ramp = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            ramp.name = "Kicker";
+            ramp.name = label;
             ramp.transform.localScale = new Vector3(7f, 0.5f, 8f);
             ramp.transform.SetPositionAndRotation(
                 position + new Vector3(0f, 0.65f, 0f),
-                Quaternion.Euler(-15f, yaw, 0f));
+                Quaternion.Euler(-pitchDegrees, yaw, 0f));
             Paint(ramp, new Color(0.54f, 0.42f, 0.3f));
+            return ramp;
+        }
+
+        /// <summary>
+        /// Somewhere a bailed player is put back on their feet (#6). Placing these properly is
+        /// #9's job; a test scene just needs a few so the bail recovery can be felt.
+        /// </summary>
+        public static GameObject CreateSafePoint(Vector3 position, float yaw = 0f)
+        {
+            var go = new GameObject("Safe Point");
+            go.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
+            go.AddComponent<FiftyFifty.Board.Tricks.SafePoint>();
+            return go;
         }
 
         /// <summary>
@@ -74,9 +93,16 @@ namespace FiftyFifty.EditorTools
             BoxCollider collider = root.AddComponent<BoxCollider>();
             collider.size = new Vector3(0.3f, 0.1f, 0.8f);
 
+            // Everything the player SEES of the board hangs off one cosmetic group. Flips roll
+            // it, shuvits yaw it, the carve leans it — and none of that reaches the rigidbody
+            // underneath (#16, #6 rule 8). At identity it is pixel-identical to the loose parts
+            // it replaced, which is what makes the trick system removable.
+            var mesh = new GameObject("BoardMesh");
+            mesh.transform.SetParent(root.transform, false);
+
             GameObject deck = GameObject.CreatePrimitive(PrimitiveType.Cube);
             deck.name = "Deck";
-            deck.transform.SetParent(root.transform, false);
+            deck.transform.SetParent(mesh.transform, false);
             deck.transform.localScale = new Vector3(0.28f, 0.05f, 0.8f);
             Object.DestroyImmediate(deck.GetComponent<BoxCollider>());
             Paint(deck, new Color(0.15f, 0.15f, 0.19f));
@@ -84,7 +110,7 @@ namespace FiftyFifty.EditorTools
             // Nose marker — you cannot read board orientation in the air without one.
             GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Cube);
             nose.name = "Nose";
-            nose.transform.SetParent(root.transform, false);
+            nose.transform.SetParent(mesh.transform, false);
             nose.transform.localPosition = new Vector3(0f, 0.04f, 0.38f);
             nose.transform.localScale = new Vector3(0.26f, 0.035f, 0.1f);
             Object.DestroyImmediate(nose.GetComponent<BoxCollider>());
@@ -93,7 +119,7 @@ namespace FiftyFifty.EditorTools
             // Grip stripe down one side, so roll direction is readable mid-air.
             GameObject stripe = GameObject.CreatePrimitive(PrimitiveType.Cube);
             stripe.name = "GripStripe";
-            stripe.transform.SetParent(root.transform, false);
+            stripe.transform.SetParent(mesh.transform, false);
             stripe.transform.localPosition = new Vector3(0.1f, 0.04f, 0f);
             stripe.transform.localScale = new Vector3(0.05f, 0.035f, 0.76f);
             Object.DestroyImmediate(stripe.GetComponent<BoxCollider>());
@@ -106,9 +132,21 @@ namespace FiftyFifty.EditorTools
             rider.transform.localScale = new Vector3(0.26f, 0.48f, 0.26f);
             Paint(rider, new Color(0.85f, 0.82f, 0.74f));
 
+            // A shuvit turns the board under a stationary rider; a 180 turns both. With no face
+            // on the rider those are the same picture, and the player cannot tell which trick
+            // they just did. This marker is the whole reason a shuvit is legible in greybox.
+            GameObject face = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            face.name = "RiderFace";
+            face.transform.SetParent(rider.transform, false);
+            face.transform.localPosition = new Vector3(0f, 0.25f, 0.45f);
+            face.transform.localScale = new Vector3(0.55f, 0.25f, 0.5f);
+            Object.DestroyImmediate(face.GetComponent<BoxCollider>());
+            Paint(face, new Color(0.95f, 0.85f, 0.2f));
+
             var input = root.AddComponent<PlayerBoardInput>();
             var controller = root.AddComponent<BoardController>();
             controller.InputSource = input;
+            controller.DeckVisual = mesh.transform;
 
             return root;
         }

@@ -38,6 +38,17 @@ namespace FiftyFifty.Board
         /// a state you hold, and letting go is how you hook back up.</summary>
         public bool PowerslideHeld;
 
+        /// <summary>
+        /// Named trick requested this tick, 1-based into the trick table. 0 is "nothing asked
+        /// for", so a default struct means no trick — which is what a network input struct has
+        /// to mean (#3).
+        ///
+        /// A slot rather than a button because the bindings are still open on #6. Whatever the
+        /// chord turns out to be, it resolves to a slot here and the simulation never learns
+        /// what a gamepad is.
+        /// </summary>
+        public int TrickSlot;
+
         /// <summary>Camera orbit, right stick. Presentation only, not simulation state.</summary>
         public Vector2 CameraLook;
     }

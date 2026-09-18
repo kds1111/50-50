@@ -12,6 +12,9 @@ namespace FiftyFifty.Board
     {
         public BoardController Board;
 
+        [Tooltip("Optional. When present the HUD reports tricks, spins and bails (#6).")]
+        public FiftyFifty.Board.Tricks.BoardTrickController Tricks;
+
         [Tooltip("Key that puts the board back at its spawn point.")]
         public Key RespawnKey = Key.R;
 
@@ -37,7 +40,7 @@ namespace FiftyFifty.Board
             _big ??= new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold };
             _small ??= new GUIStyle(GUI.skin.label) { fontSize = 14 };
 
-            GUILayout.BeginArea(new Rect(18, 18, 520, 260));
+            GUILayout.BeginArea(new Rect(18, 18, 560, 330));
 
             GUILayout.Label($"{Board.Speed:0.0} m/s", _big);
             GUILayout.Label(Board.Grounded ? "grounded" : $"AIR  {Board.TimeInAir:0.00}s", _small);
@@ -51,11 +54,37 @@ namespace FiftyFifty.Board
                 GUILayout.Label($"sliding   grip {Board.Grip:0.00}   slip {Board.SlipAngle:0}°", _small);
             }
 
+            if (Tricks != null && Tricks.TricksEnabled)
+            {
+                GUILayout.Space(8);
+
+                if (Tricks.KnockedDown)
+                {
+                    GUILayout.Label("BAILED — down", _big);
+                }
+                else if (Tricks.RunningTrick != null)
+                {
+                    // The progress bar is the point of the readout while tuning: it shows how
+                    // much of the trick is left against how much air is left, which is the
+                    // judgement #6 asks the player to learn without a readout in the real game.
+                    GUILayout.Label(
+                        $"{Tricks.RunningTrick.Name}   {Tricks.TrickProgress * 100f:0}%   " +
+                        $"(vulnerable)",
+                        _small);
+                }
+
+                GUILayout.Label(
+                    $"last: {Tricks.LastTrick}   spin {Tricks.LastSpin}   " +
+                    $"x{Tricks.LastMultiplier:0.0}   {Tricks.LastOutcome}",
+                    _small);
+            }
+
             GUILayout.Space(10);
             GUILayout.Label(
                 "pad:  LS steer / air spin   RS camera   RT accelerate   LT brake   A ollie\n" +
                 "keys: A,D steer / air spin   W accelerate   S brake   arrows camera   SPACE ollie\n" +
                 "L3 / SHIFT powerslide   (brake held at rest reverses)\n" +
+                "tricks: hold A (SPACE) + B/X/Y  —  keys J / K / L\n" +
                 "R respawn",
                 _small);
 

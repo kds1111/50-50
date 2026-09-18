@@ -275,7 +275,32 @@ namespace FiftyFifty.Board
         /// STAND-IN for the trick tag #6 will provide. A plain ollie accumulates no yaw, so it
         /// never counts as a trick — which is what keeps ollieing to block a goal free of risk.
         /// </summary>
-        public bool InTrick => !_grounded && Mathf.Abs(_airYawTurns) >= TrickYawTurnsThreshold;
+        public bool InTrick => NamedTrickTag != null
+            ? NamedTrickTag()
+            : !_grounded && Mathf.Abs(_airYawTurns) >= TrickYawTurnsThreshold;
+
+        /// <summary>
+        /// Set by BoardTrickController while it is enabled, and null otherwise.
+        ///
+        /// The expression above is the stand-in #7 shipped: airborne with enough accumulated
+        /// yaw. #6 rule 12 replaced it rather than refined it — only a NAMED trick makes a
+        /// player punishable, and a pure spin never does — so the two are not approximations of
+        /// each other. Keeping the stand-in as the fallback is what makes the trick component
+        /// removable without changing how the ball behaves in a scene that never had it.
+        /// </summary>
+        [System.NonSerialized] public System.Func<bool> NamedTrickTag;
+
+        /// <summary>
+        /// Cosmetic rotation of the deck mesh, set by BoardTrickController. Identity by default,
+        /// which is exactly what the board looked like before tricks existed.
+        ///
+        /// VISUAL ONLY, and that is load-bearing: #16 froze the rigidbody's rotation and made
+        /// the controller the sole owner of orientation, because every rotation bug this project
+        /// had came from something else negotiating it. A kickflip turns this mesh 360 degrees
+        /// while the simulation board stays flat and level underneath, so suspension, landing
+        /// detection and grip never see an upside-down board.
+        /// </summary>
+        [System.NonSerialized] public Quaternion TrickVisualRotation = Quaternion.identity;
 
         /// <summary>Grip is below normal: either a crooked landing or a held powerslide.</summary>
         public bool Sliding => _grip < SidewaysGrip - 0.001f;
@@ -369,7 +394,9 @@ namespace FiftyFifty.Board
 
             if (DeckVisual == null)
             {
-                DeckVisual = transform.Find("Deck");
+                // BoardMesh is the cosmetic group everything visible hangs off. Deck is the
+                // older, looser shape — scenes built before #6 still have it, and still work.
+                DeckVisual = transform.Find("BoardMesh") ?? transform.Find("Deck");
             }
 
             _spawnPosition = transform.position;
@@ -852,7 +879,26 @@ namespace FiftyFifty.Board
 
             float wanted = _grounded ? -_input.Steer * LeanAngle : 0f;
             _visualLean = Mathf.Lerp(_visualLean, wanted, Mathf.Clamp01(LeanSpeed * Time.deltaTime));
-            DeckVisual.localRotation = Quaternion.Euler(0f, 0f, _visualLean);
+            DeckVisual.localRotation = TrickVisualRotation * Quaternion.Euler(0f, 0f, _visualLean);
+        }
+
+        /// <summary>
+        /// Put the board down somewhere specific, facing a given heading. Used by the bail
+        /// recovery on #6, which respawns at the NEAREST safe point rather than at spawn — a
+        /// fixed spawn would cost a bailed player the bank and the play, and nobody would
+        /// attempt a trick near a goal.
+        /// </summary>
+        public void RespawnAt(Vector3 position, float heading)
+        {
+            Vector3 previousSpawn = _spawnPosition;
+            float previousHeading = _spawnHeading;
+
+            _spawnPosition = position;
+            _spawnHeading = heading;
+            Respawn();
+
+            _spawnPosition = previousSpawn;
+            _spawnHeading = previousHeading;
         }
 
         public void Respawn()

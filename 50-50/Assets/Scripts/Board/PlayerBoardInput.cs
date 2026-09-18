@@ -55,6 +55,33 @@ namespace FiftyFifty.Board
         [Tooltip("Keyboard equivalent of the powerslide button.")]
         public Key PowerslideKey = Key.LeftShift;
 
+        [Header("Tricks (#6 — bindings still open)")]
+        [Tooltip("Held (or just pressed) alongside a trick button. Defaults to A, the ollie.\n\n" +
+                 "Reusing A is safe rather than clever: the ollie already ignores a press made " +
+                 "in the air, so holding A and tapping a trick button mid-air cannot re-pop. " +
+                 "Pressing them together on the ground gives ollie-and-flip as one motion, " +
+                 "which is what a kickflip physically is. Both readings work with one binding.")]
+        public GamepadButton TrickModifier = GamepadButton.South;
+
+        [Tooltip("Trick buttons, in table order. Slot 1 is the first entry on BoardTrickController.")]
+        public GamepadButton[] TrickButtons =
+        {
+            GamepadButton.East,
+            GamepadButton.West,
+            GamepadButton.North,
+        };
+
+        [Tooltip("Keyboard equivalent of the trick modifier.")]
+        public Key TrickModifierKey = Key.Space;
+
+        [Tooltip("Keyboard equivalents of the trick buttons, in the same order.")]
+        public Key[] TrickKeys = { Key.J, Key.K, Key.L };
+
+        [Tooltip("Seconds a trick press stays valid after the modifier was pressed. Two buttons " +
+                 "are never pressed on the same frame, so a chord needs a window or it is a " +
+                 "dexterity test rather than an input.")]
+        public float ChordGraceSeconds = 0.2f;
+
         [Header("Read-only (for debugging in play mode)")]
         [SerializeField] private Vector2 _debugLeftStick;
         [SerializeField] private float _debugThrottle;
@@ -64,6 +91,8 @@ namespace FiftyFifty.Board
         // consumed in Read. Without them, a quick tap between fixed steps is silently lost.
         private bool _popLatched;
         private bool _punchLatched;
+        private int _trickSlotLatched;
+        private float _modifierHeldUntil;
 
         private void Update()
         {
@@ -90,7 +119,55 @@ namespace FiftyFifty.Board
                 _punchLatched = true;
             }
 
+            PollTrickChord(pad, keys);
+
             _debugPopLatched = _popLatched;
+        }
+
+        /// <summary>
+        /// A held modifier plus a direction button, rather than a raw chord. The modifier opens
+        /// a short window (<see cref="ChordGraceSeconds"/>) so pressing "A+B" does not require
+        /// hitting both on one frame, which no player does.
+        ///
+        /// The latched slot is consumed by Read and cleared there, so one press produces exactly
+        /// one trick request however the frame rate and the fixed step line up.
+        /// </summary>
+        private void PollTrickChord(Gamepad pad, Keyboard keys)
+        {
+            bool modifierDown = (pad != null && pad[TrickModifier].wasPressedThisFrame)
+                                || (keys != null && keys[TrickModifierKey].wasPressedThisFrame);
+
+            bool modifierHeld = (pad != null && pad[TrickModifier].isPressed)
+                                || (keys != null && keys[TrickModifierKey].isPressed);
+
+            if (modifierDown)
+            {
+                _modifierHeldUntil = Time.unscaledTime + ChordGraceSeconds;
+            }
+
+            bool windowOpen = modifierHeld || Time.unscaledTime <= _modifierHeldUntil;
+
+            if (!windowOpen)
+            {
+                return;
+            }
+
+            int count = TrickButtons != null ? TrickButtons.Length : 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                bool padPressed = pad != null && pad[TrickButtons[i]].wasPressedThisFrame;
+                bool keyPressed = keys != null
+                                  && TrickKeys != null
+                                  && i < TrickKeys.Length
+                                  && keys[TrickKeys[i]].wasPressedThisFrame;
+
+                if (padPressed || keyPressed)
+                {
+                    _trickSlotLatched = i + 1;
+                    return;
+                }
+            }
         }
 
         public override BoardInputState Read()
@@ -150,11 +227,13 @@ namespace FiftyFifty.Board
                 GrabHeld = grabHeld,
                 PunchPressed = _punchLatched,
                 PowerslideHeld = powerslideHeld,
+                TrickSlot = _trickSlotLatched,
                 CameraLook = right,
             };
 
             _popLatched = false;
             _punchLatched = false;
+            _trickSlotLatched = 0;
 
             return state;
         }
