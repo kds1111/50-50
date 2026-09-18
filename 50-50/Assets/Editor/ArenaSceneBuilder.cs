@@ -39,12 +39,25 @@ namespace FiftyFifty.EditorTools
     {
         private const string ScenePath = "Assets/Scenes/Arena.unity";
 
-        // Roughly 2.2:1, a little wider than the reference course. The extra width is for the
-        // ball: an SLS course only ever has one skater on it, and two players plus a loose ball
-        // need room to be beaten laterally rather than only head-on.
-        private const float HalfWidth = 17f;
-        private const float HalfLength = 38f;
-        private const float WallHeight = 4f;
+        /// <summary>
+        /// How much bigger than a playable pitch this test map is.
+        ///
+        /// 1 is the arena proportioned for an actual match — roughly 2.2:1, a little wider than
+        /// the SLS reference because two players and a loose ball need room to be beaten
+        /// laterally rather than only head-on.
+        ///
+        /// Above 1 it stops being a pitch and becomes somewhere to drive: room to reach top
+        /// speed, hit a bank at it, and see what a spin and a crooked landing do without a wall
+        /// arriving first. Obstacle SIZES are deliberately not scaled — a ramp ten times wider
+        /// is not a ramp — so the cluster is tiled across the space instead.
+        ///
+        /// Change this one number to retune the whole map.
+        /// </summary>
+        private const float Scale = 10f;
+
+        private const float HalfWidth = 17f * Scale;
+        private const float HalfLength = 38f * Scale;
+        private const float WallHeight = 4f * Scale;
 
         [MenuItem("50-50/Rebuild Arena Scene")]
         public static void Build()
@@ -62,9 +75,10 @@ namespace FiftyFifty.EditorTools
             CreateFloor();
             CreateWalls();
 
-            // Goals face inward from each end.
-            ArenaParts.CreateGoal(new Vector3(0f, 0f, HalfLength - 2f), 0f, 9f, 4f);
-            ArenaParts.CreateGoal(new Vector3(0f, 0f, -(HalfLength - 2f)), 180f, 9f, 4f);
+            // Goals face inward from each end, and DO scale — at this size a 9 m goal is a
+            // rounding error you could never find, let alone shoot at.
+            ArenaParts.CreateGoal(new Vector3(0f, 0f, HalfLength - 2f), 0f, 9f * Scale, 4f * Scale);
+            ArenaParts.CreateGoal(new Vector3(0f, 0f, -(HalfLength - 2f)), 180f, 9f * Scale, 4f * Scale);
 
             BuildHalf();
 
@@ -96,29 +110,45 @@ namespace FiftyFifty.EditorTools
         /// </summary>
         private static void BuildHalf()
         {
+            // The layout is written once at pitch scale and tiled across the map, so the space is
+            // somewhere to drive rather than seven objects lost in a field. Each station is a
+            // full copy, mirrored into the other half by Place as usual.
+            int stations = Mathf.Max(1, Mathf.RoundToInt(Scale) / 2);
+
+            for (int i = 0; i < stations; i++)
+            {
+                float z = HalfLength * ((i + 0.5f) / stations);
+                float x = ((i % 2 == 0) ? 1f : -1f) * HalfWidth * 0.45f;
+                BuildStation(new Vector3(x, 0f, z));
+            }
+        }
+
+        /// <summary>One copy of the layout, placed relative to an origin.</summary>
+        private static void BuildStation(Vector3 origin)
+        {
             // The airtime. Against the side wall at mid-field, rising toward the wall: ride at
             // it, go up, come back down. Two different pitches so the arena offers a big trick
             // and a small one rather than one generic amount of air (#6 fixes trick durations in
             // seconds, so the ramps have to be tellable apart).
-            Place(p => ArenaParts.CreateBank(p, 90f, 30f, 16f, 9f, "Bank L"), new Vector3(12f, 0f, 8f));
-            Place(p => ArenaParts.CreateBank(p, -90f, 18f, 12f, 7f, "Bank S"), new Vector3(-13f, 0f, 22f));
+            Place(p => ArenaParts.CreateBank(p, 90f, 30f, 16f, 9f, "Bank L"), origin + new Vector3(12f, 0f, 8f));
+            Place(p => ArenaParts.CreateBank(p, -90f, 18f, 12f, 7f, "Bank S"), origin + new Vector3(-13f, 0f, 22f));
 
             // A kicker pointing down the pitch. The one piece of terrain that does send you
             // toward a goal — deliberately small, so it is a shortcut rather than the whole game.
-            Place(p => ArenaParts.CreateBank(p, 0f, 14f, 7f, 7f, "Kicker"), new Vector3(5f, 0f, 27f));
+            Place(p => ArenaParts.CreateBank(p, 0f, 14f, 7f, 7f, "Kicker"), origin + new Vector3(5f, 0f, 27f));
 
             // Street furniture. Nothing detects a grind yet (#12, blocked on this ticket), but a
             // ledge is a thing to pop off and a rail is a thing to be in the way.
-            Place(p => ArenaParts.CreateLedge(p, 0f, 11f, 0.6f, "Hubba"), new Vector3(-7f, 0f, 14f));
-            Place(p => ArenaParts.CreateRail(p, 0f, 9f, 0.5f), new Vector3(-2f, 0f, 30f));
-            Place(p => ArenaParts.CreateManualPad(p, 0f, 4f, 9f), new Vector3(9f, 0f, 19f));
-            Place(p => ArenaParts.CreateStairs(p, 180f, 4, 6f), new Vector3(13f, 0f, 31f));
+            Place(p => ArenaParts.CreateLedge(p, 0f, 11f, 0.6f, "Hubba"), origin + new Vector3(-7f, 0f, 14f));
+            Place(p => ArenaParts.CreateRail(p, 0f, 9f, 0.5f), origin + new Vector3(-2f, 0f, 30f));
+            Place(p => ArenaParts.CreateManualPad(p, 0f, 4f, 9f), origin + new Vector3(9f, 0f, 19f));
+            Place(p => ArenaParts.CreateStairs(p, 180f, 4, 6f), origin + new Vector3(13f, 0f, 31f));
 
             // Bail recovery. #6 respawns at the nearest safe point so one mistake costs the bank
             // and not the play; these are spread so no part of the pitch is far from one.
-            Place(p => GreyboxParts.CreateSafePoint(p), new Vector3(0f, 0.4f, 30f));
-            Place(p => GreyboxParts.CreateSafePoint(p), new Vector3(10f, 0.4f, 14f));
-            Place(p => GreyboxParts.CreateSafePoint(p), new Vector3(-10f, 0.4f, 6f));
+            Place(p => GreyboxParts.CreateSafePoint(p), origin + new Vector3(0f, 0.4f, 30f));
+            Place(p => GreyboxParts.CreateSafePoint(p), origin + new Vector3(10f, 0.4f, 14f));
+            Place(p => GreyboxParts.CreateSafePoint(p), origin + new Vector3(-10f, 0.4f, 6f));
         }
 
         /// <summary>Place a piece, then its 180-degree twin.</summary>
@@ -142,7 +172,7 @@ namespace FiftyFifty.EditorTools
             // Halfway line, so which end is which is readable at speed.
             GameObject line = GameObject.CreatePrimitive(PrimitiveType.Cube);
             line.name = "Halfway Line";
-            line.transform.localScale = new Vector3(HalfWidth * 2f, 0.02f, 0.3f);
+            line.transform.localScale = new Vector3(HalfWidth * 2f, 0.02f, 0.3f * Scale);
             line.transform.position = new Vector3(0f, 0.005f, 0f);
             Object.DestroyImmediate(line.GetComponent<BoxCollider>());
             GreyboxParts.Paint(line, new Color(0.75f, 0.2f, 0.2f));
