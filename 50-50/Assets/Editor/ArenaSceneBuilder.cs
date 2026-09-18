@@ -53,8 +53,12 @@ namespace FiftyFifty.EditorTools
         /// is not a ramp — so the cluster is tiled across the space instead.
         ///
         /// Change this one number to retune the whole map.
+        ///
+        /// 1.25 — 42.5 x 95 m. It was 10 (340 x 760 m), which played as too big: halved three
+        /// times by the dev after the first session with the bank and grinds in it. At this size
+        /// the layout is the pitch layout itself, centred, with a little room around it.
         /// </summary>
-        private const float Scale = 10f;
+        private const float Scale = 1.25f;
 
         private const float HalfWidth = 17f * Scale;
         private const float HalfLength = 38f * Scale;
@@ -121,6 +125,16 @@ namespace FiftyFifty.EditorTools
             // somewhere to drive rather than seven objects lost in a field. Each station is a
             // full copy, mirrored into the other half by Place as usual.
             int stations = Mathf.Max(1, Mathf.RoundToInt(Scale) / 2);
+
+            // One station is the layout exactly as authored: centred, where every piece was
+            // placed against a 34 x 76 pitch. The offsets below exist to spread SEVERAL copies
+            // across a big map; applied to a single copy on a small one they push the big bank
+            // through the side wall and the stairs past the end wall.
+            if (stations == 1)
+            {
+                BuildStation(Vector3.zero);
+                return;
+            }
 
             for (int i = 0; i < stations; i++)
             {
