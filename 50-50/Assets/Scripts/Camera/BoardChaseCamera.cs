@@ -42,11 +42,8 @@ namespace FiftyFifty.CameraRig
         public float HeadingDamping = 4f;
 
         [Header("Airborne")]
-        [Tooltip("How far the camera will follow a spin while airborne, in degrees either way.\n\n" +
-                 "Inert while BoardController.AirSpinIsCosmetic is on, which is the default: a " +
-                 "spin then turns the board and rider without touching the heading, so there is " +
-                 "nothing here for the camera to follow and the view holds perfectly still. This " +
-                 "only does anything if spinning is switched back to steering you.")]
+        [Tooltip("How far the camera will follow a spin while airborne, in degrees either way. " +
+                 "0 keeps the view perfectly still; 180 would follow the spin completely.")]
         [Range(0f, 180f)] public float AirHeadingFollow = 35f;
 
         [Tooltip("How quickly the camera follows within that limit. Lower than the ground " +
@@ -84,7 +81,7 @@ namespace FiftyFifty.CameraRig
                 Board = Target.GetComponent<BoardController>();
             }
 
-            _anchorHeading = Target != null ? Target.eulerAngles.y : 0f;
+            _anchorHeading = BoardHeading();
 
             if (Target != null)
             {
@@ -147,7 +144,7 @@ namespace FiftyFifty.CameraRig
         private void UpdateHeading(float dt)
         {
             bool grounded = Board == null || Board.Grounded;
-            float boardHeading = Target.eulerAngles.y;
+            float boardHeading = BoardHeading();
 
             if (grounded)
             {
@@ -176,17 +173,28 @@ namespace FiftyFifty.CameraRig
             _heading = Quaternion.Slerp(_heading, wanted, Mathf.Clamp01(AirHeadingDamping * dt));
         }
 
-        /// <summary>The board's facing, flattened — roll and pitch are deliberately discarded.</summary>
-        private Quaternion FlatHeading()
+        /// <summary>
+        /// The direction the player is DRIVING, not the way the board points.
+        ///
+        /// Those differ by a half turn whenever the tail is leading, and that difference is the
+        /// whole reason landing a 180 does not swing the view: the board turned, the direction
+        /// being driven did not. Land a 90 and they agree again, so the camera does swing round
+        /// behind the board — which is correct, because that is where you are now going.
+        /// </summary>
+        private float BoardHeading()
         {
-            Vector3 flat = Vector3.ProjectOnPlane(Target.forward, Vector3.up);
-            if (flat.sqrMagnitude < 0.001f)
+            if (Board != null)
             {
-                // Board is nose-up (mid-trick). Fall back to the last good heading.
-                return _heading;
+                return Board.DriveHeading;
             }
 
-            return Quaternion.LookRotation(flat.normalized, Vector3.up);
+            return Target != null ? Target.eulerAngles.y : 0f;
+        }
+
+        /// <summary>Flattened — roll and pitch are deliberately discarded.</summary>
+        private Quaternion FlatHeading()
+        {
+            return Quaternion.Euler(0f, BoardHeading(), 0f);
         }
 
         private Vector2 CameraLook()

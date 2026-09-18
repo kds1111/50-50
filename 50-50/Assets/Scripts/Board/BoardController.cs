@@ -117,31 +117,10 @@ namespace FiftyFifty.Board
                  "stays true whichever way you are rolling.")]
         public bool InvertSteerInReverse = false;
 
-        [Header("Heading (#19)")]
-        [Tooltip("An air spin turns the board and rider. It does NOT turn the direction you " +
-                 "drive.\n\n" +
-                 "These are two separate things and neither drags the other. Land a 180 and you " +
-                 "are facing backwards, still travelling the same way, with every control meaning " +
-                 "exactly what it meant before — and nothing snaps back on landing, because " +
-                 "nothing about your driving ever moved. The rotation is still accumulated, " +
-                 "classified and scored; it is simply not a change of direction.\n\n" +
-                 "Off restores the old behaviour, where spinning steers you.")]
-        public bool AirSpinIsCosmetic = true;
-
-        [Tooltip("How far round a spin has to get before landing commits to it, in degrees.\n\n" +
-                 "The board can only rest in line with its own wheels — square with the way you " +
-                 "are driving, or a half turn from it. Anything else is the board pointing across " +
-                 "its direction of travel, which is a sideways slide, which is what the " +
-                 "powerslide is for and should never happen by accident.\n\n" +
-                 "Past this, a landing settles backwards. Short of it, it settles back the way it " +
-                 "started. Above 90 so that a spin you did not commit to gives you nothing and " +
-                 "costs you nothing.")]
-        [Range(90f, 179f)] public float SpinCommitDegrees = 135f;
-
-        [Tooltip("Degrees per second the board straightens onto its line after landing crooked. " +
-                 "Fast reads as a snap, slow reads as sloppy — this is the rider correcting, so " +
-                 "it wants to be quick but visible.")]
-        public float SpinResolveSpeed = 600f;
+        [Header("Lead end (#19)")]
+        [Tooltip("Below this speed a landing has no meaningful direction of travel, so which " +
+                 "end leads is left as it was rather than picked from noise.")]
+        public float LeadEndMinSpeed = 1f;
 
         [Header("Traction — landing slide (#18)")]
         [Tooltip("Land crooked and the board keeps its heading while momentum carries on the old " +
@@ -268,10 +247,6 @@ namespace FiftyFifty.Board
         [Tooltip("Deck mesh, leaned into turns. VISUAL ONLY — never affects physics or heading.")]
         public Transform DeckVisual;
 
-        [Tooltip("Rider mesh. Turns with a spin but NOT with a shuvit — a shuvit spins the board " +
-                 "under a stationary rider and a 180 turns both, which is the only thing that " +
-                 "tells them apart. VISUAL ONLY.")]
-        public Transform RiderVisual;
 
         [Tooltip("How far the deck tips into a full-lock turn, in degrees.")]
         public float LeanAngle = 14f;
@@ -286,18 +261,20 @@ namespace FiftyFifty.Board
         [SerializeField] private float _heading;
         [SerializeField] private float _timeInAir;
         [SerializeField] private float _airYawTurns;
-
         /// <summary>
-        /// How far the board and rider are turned relative to the direction being driven.
+        /// Which end of the board is forward: +1 nose, -1 tail.
         ///
-        /// A spin adds to this and leaves the heading alone. The flip button does the exact
-        /// opposite — it turns the heading and subtracts the same amount here — so the drive
-        /// direction reverses while nothing on screen visibly moves.
+        /// A skateboard rolls along its wheels, so the direction you drive is always the
+        /// board's own line — this only picks which way along it. That is the whole of #19:
+        /// land a 180 and the board genuinely points backwards, this flips to -1, and you
+        /// carry on exactly as you were, rolling tail-first. Nothing has to be corrected,
+        /// because nothing is out of place.
+        ///
+        /// Simulation state: it decides what the throttle does, so it belongs in reconcile
+        /// data.
         /// </summary>
-        [SerializeField] private float _visualYaw;
+        [SerializeField] private float _leadEnd = 1f;
 
-        /// <summary>Where the offset is settling to. Always 0 or a half turn — never anything else.</summary>
-        [SerializeField] private float _visualYawTarget;
         [SerializeField] private bool _powersliding;
         [SerializeField] private float _grip;
         [SerializeField] private bool _disturbed;
@@ -306,6 +283,16 @@ namespace FiftyFifty.Board
         public float Speed => _speed;
         public float TimeInAir => _timeInAir;
         public float Heading => _heading;
+
+        /// <summary>Which end leads: +1 nose, -1 tail.</summary>
+        public float LeadEnd => _leadEnd;
+
+        /// <summary>
+        /// The direction the player is actually driving — the board's heading, or a half turn
+        /// from it when rolling tail-first. This is what the camera follows, which is why landing
+        /// a 180 does not move the view: the board turned, the direction being driven did not.
+        /// </summary>
+        public float DriveHeading => _heading + (_leadEnd < 0f ? 180f : 0f);
 
         /// <summary>The physics body. Read its pose rather than the transform — with
         /// interpolation on, the transform is the rendered pose, not the simulated one.</summary>
@@ -443,10 +430,6 @@ namespace FiftyFifty.Board
                 DeckVisual = transform.Find("BoardMesh") ?? transform.Find("Deck");
             }
 
-            if (RiderVisual == null)
-            {
-                RiderVisual = transform.Find("Rider");
-            }
 
             _spawnPosition = transform.position;
             _grip = SidewaysGrip;
@@ -629,7 +612,13 @@ namespace FiftyFifty.Board
         /// <summary>Steering turns the heading. Nothing else rotates the board on the ground.</summary>
         private void Steer(float dt)
         {
-            float forwardSpeed = Vector3.Dot(_rb.linearVelocity, _forward);
+            // Measured against the leading end, so "reversing" means going backwards relative to
+            // the way the player is driving rather than relative to the nose.
+            //
+            // The steer sign needs no correction for the lead end: turning the board rotates both
+            // of its ends the same way, so pushing right curves your travel right whichever end
+            // is in front.
+            float forwardSpeed = Vector3.Dot(_rb.linearVelocity, _forward * _leadEnd);
 
             // Steering authority normally comes from how fast you are going FORWARD, which is
             // right until the board is sideways: mid-drift the nose points away from the travel,
@@ -650,43 +639,31 @@ namespace FiftyFifty.Board
 
         /// <summary>In the air the heading keeps turning, which is all a 180 is.</summary>
         /// <summary>
-        /// Spin the board in the air. Board and rider turn together; the heading does not move.
-        ///
-        /// Landing therefore has nothing to put back: the orientation earned in the air is kept,
-        /// and the player carries on driving exactly as before. That is #19's verdict, and the
-        /// reason there is no snap.
+        /// In the air the heading keeps turning, which is all a 180 is. The board rotates for
+        /// real — wheels, collider and mesh together — because a board that looked turned but
+        /// was not would be rolling across its own wheels, and that is a slide, not a spin.
         /// </summary>
         private void SpinInAir(float dt)
         {
             float delta = _input.Attitude.x * AirYawRate * dt;
-
-            if (AirSpinIsCosmetic)
-            {
-                _visualYaw += delta;
-            }
-            else
-            {
-                _heading += delta;
-            }
-
+            _heading += delta;
             _airYawTurns += delta / 360f;
         }
 
         /// <summary>
-        /// Turn the direction you drive around, without turning the board.
+        /// Swap which end of the board leads.
         ///
-        /// The heading gains a half turn and the visual offset loses one, so they cancel exactly:
-        /// nothing on screen rotates, but the throttle, the steering and the camera all now mean
-        /// the other way. The board carries on pointing wherever the last trick left it, which is
-        /// correct — with no switch stance either end leads equally well.
+        /// Nothing rotates. The board keeps pointing exactly where it was; the throttle, the
+        /// steering and the camera all just start meaning the other way along its line, which
+        /// is why it reads as the player changing their mind rather than the world turning.
         ///
-        /// Ground only. In the air it would silently change where a player lands up driving with
-        /// nothing visible happening, which reads as broken rather than powerful.
+        /// Ground only. In the air it would silently change where a player ends up driving
+        /// with nothing visible happening, which reads as broken rather than powerful.
         ///
-        /// Instant, and grip does not fight it: grip scrubs velocity perpendicular to the board,
-        /// and a half turn has no perpendicular component, so momentum is kept and the throttle
-        /// simply starts working against it. The drive code already copes with a negative forward
-        /// speed without a special case.
+        /// Grip does not fight it. Grip scrubs velocity perpendicular to the board, and
+        /// swapping ends does not move the board, so there is nothing new to scrub: momentum
+        /// is kept and the throttle simply starts working against it. The drive code already
+        /// copes with a negative forward speed without a special case.
         /// </summary>
         private void ApplyHeadingFlip()
         {
@@ -695,9 +672,7 @@ namespace FiftyFifty.Board
                 return;
             }
 
-            _heading += 180f;
-            _visualYaw = NormalizeAngle(_visualYaw - 180f);
-            _visualYawTarget = NormalizeAngle(_visualYawTarget - 180f);
+            _leadEnd = -_leadEnd;
         }
 
         /// <summary>
@@ -732,7 +707,10 @@ namespace FiftyFifty.Board
 
         private void ApplyDrive(float dt)
         {
-            Vector3 forward = Vector3.ProjectOnPlane(_forward, _groundNormal).normalized;
+            // Everything below is written in terms of "forward", and the lead end is what that
+            // word means. Resolving it once here is why rolling tail-first needs no special case
+            // anywhere else in the drive, the brake or the reverse.
+            Vector3 forward = Vector3.ProjectOnPlane(_forward * _leadEnd, _groundNormal).normalized;
             float forwardSpeed = Vector3.Dot(_rb.linearVelocity, forward);
 
             bool throttleAllowed = !(_powersliding && PowerslideBlocksThrottle);
@@ -865,35 +843,33 @@ namespace FiftyFifty.Board
         /// now. Whether it should instead leave the rider switch is #19.
         /// </summary>
         /// <summary>
-        /// Decide which way the board is left pointing after a spin.
+        /// Pick which end of the board leads, from the way it is actually travelling.
         ///
-        /// A skateboard rolls along its wheels, so there are only two orientations it can rest
-        /// in: square with the way you are driving, or a half turn from it, rolling tail-first.
-        /// Anything between those points the wheels across your direction of travel, which is a
-        /// sideways slide — that is what the powerslide is for, and it must never happen because
-        /// a spin happened to end early.
+        /// The board is never rotated to suit. It rolls along its wheels wherever a spin left
+        /// it pointing, and all this decides is which way along that line the throttle, the
+        /// steering and the camera mean.
         ///
-        /// So a landing picks one. Past SpinCommitDegrees the spin is credited and you land
-        /// backwards; short of it the board comes back to where it started, and the half-spin
-        /// cost nothing. The board then turns onto that choice over a moment rather than
-        /// snapping, which reads as the rider correcting rather than the game teleporting.
+        /// Land a 180 and the nearer end is the tail, so you roll tail-first and every
+        /// control keeps meaning what it meant — nothing was corrected, because nothing was
+        /// out of place. Land a 90 and the board is across its own travel, which is a slide,
+        /// and the traction model on #18 already owns that: grip drops, you slide out, grip
+        /// pulls you onto the line. A crooked landing stops being a thing to fix and becomes
+        /// the thing that system was built for.
         ///
-        /// Whole turns are discarded first, which is free: 370 degrees and 10 degrees are the
-        /// same picture, so normalising them cannot be seen.
+        /// An exact 90 is a tie. It resolves nose-first, the state the player was already in,
+        /// and it only lasts the length of the slide anyway.
         /// </summary>
-        private void ResolveSpinOnLanding()
+        private void PickLeadEnd()
         {
-            _visualYaw = NormalizeAngle(_visualYaw);
+            Vector3 flat = Vector3.ProjectOnPlane(_rb.linearVelocity, Vector3.up);
 
-            _visualYawTarget = Mathf.Abs(_visualYaw) >= SpinCommitDegrees
-                ? Mathf.Sign(_visualYaw) * 180f
-                : 0f;
-        }
+            if (flat.magnitude < LeadEndMinSpeed)
+            {
+                return;
+            }
 
-        /// <summary>Into (-180, 180]. Visually free — the rotation is unchanged.</summary>
-        private static float NormalizeAngle(float degrees)
-        {
-            return Mathf.Repeat(degrees + 180f, 360f) - 180f;
+            Vector3 nose = Quaternion.Euler(0f, _heading, 0f) * Vector3.forward;
+            _leadEnd = Vector3.Dot(nose, flat.normalized) >= 0f ? 1f : -1f;
         }
 
         private void BeginLandingSlide()
@@ -987,7 +963,7 @@ namespace FiftyFifty.Board
             _timeInAir = 0f;
             _airYawTurns = 0f;
 
-            ResolveSpinOnLanding();
+            PickLeadEnd();
             BeginLandingSlide();
 
             // Deliberately does NOT cancel the board's fall. It used to, and the spring then
@@ -1004,26 +980,10 @@ namespace FiftyFifty.Board
                 return;
             }
 
-            if (_grounded)
-            {
-                _visualYaw = Mathf.MoveTowards(
-                    _visualYaw, _visualYawTarget, SpinResolveSpeed * Time.deltaTime);
-            }
-
             float wanted = _grounded ? -_input.Steer * LeanAngle : 0f;
             _visualLean = Mathf.Lerp(_visualLean, wanted, Mathf.Clamp01(LeanSpeed * Time.deltaTime));
 
-            // A spin turns the whole assembly. A trick turns only the board, under a rider who
-            // stays put — which is the entire difference between a 180 and a shuvit.
-            Quaternion spin = Quaternion.Euler(0f, _visualYaw, 0f);
-
-            DeckVisual.localRotation =
-                spin * TrickVisualRotation * Quaternion.Euler(0f, 0f, _visualLean);
-
-            if (RiderVisual != null)
-            {
-                RiderVisual.localRotation = spin;
-            }
+            DeckVisual.localRotation = TrickVisualRotation * Quaternion.Euler(0f, 0f, _visualLean);
         }
 
         /// <summary>
@@ -1057,8 +1017,7 @@ namespace FiftyFifty.Board
             _powersliding = false;
             _grip = SidewaysGrip;
             _airYawTurns = 0f;
-            _visualYaw = 0f;
-            _visualYawTarget = 0f;
+            _leadEnd = 1f;
             _wobbleAmplitude = 0f;
             _wobbleOffset = 0f;
             _disturbedTimer = 0f;

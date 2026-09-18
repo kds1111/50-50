@@ -147,7 +147,6 @@ namespace FiftyFifty.EditorTools
             var controller = root.AddComponent<BoardController>();
             controller.InputSource = input;
             controller.DeckVisual = mesh.transform;
-            controller.RiderVisual = rider.transform;
 
             return root;
         }
