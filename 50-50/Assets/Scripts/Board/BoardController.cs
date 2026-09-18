@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace FiftyFifty.Board
 {
@@ -319,6 +320,7 @@ namespace FiftyFifty.Board
         [System.NonSerialized] public bool TrickCreditBlocked;
 
         private Rigidbody _rb;
+        private PhysicsScene _physicsScene;
         private BoardInputState _input;
         private Vector3 _groundNormal = Vector3.up;
         private Vector3 _surfaceUp = Vector3.up;
@@ -347,6 +349,12 @@ namespace FiftyFifty.Board
         private void Awake()
         {
             _rb = GetComponent<Rigidbody>();
+
+            // Cast into THIS object's physics scene, not the global one. Identical in an ordinary
+            // scene, and the difference is what lets the probes measure the board in a private
+            // world without touching the scene you have open. It is also the shape stacked
+            // scenes want later, where a server and a client each own their own physics.
+            _physicsScene = gameObject.scene.GetPhysicsScene();
             _rb.interpolation = RigidbodyInterpolation.Interpolate;
             _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             _rb.useGravity = false;
@@ -461,7 +469,7 @@ namespace FiftyFifty.Board
             {
                 Vector3 origin = _rb.position + (_rb.rotation * WheelPoints[i]);
 
-                if (!Physics.Raycast(origin, -_up, out RaycastHit hit, probeDistance))
+                if (!_physicsScene.Raycast(origin, -_up, out RaycastHit hit, probeDistance))
                 {
                     continue;
                 }

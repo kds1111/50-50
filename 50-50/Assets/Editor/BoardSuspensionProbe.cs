@@ -20,33 +20,19 @@ namespace FiftyFifty.EditorTools
         [MenuItem("50-50/Probe Board Suspension")]
         public static void Run()
         {
-            if (!ProbeScene.Begin(out string sceneToRestore))
-            {
-                return;
-            }
+            using var world = new ProbeWorld();
 
-            SimulationMode previous = Physics.simulationMode;
-            Physics.simulationMode = SimulationMode.Script;
-
-            try
-            {
-                Probe("REST  (spawned exactly at ride height)", 0.18f, 240);
-                Probe("DROP  (from 2m up)", 2.0f, 240);
-            }
-            finally
-            {
-                Physics.simulationMode = previous;
-                ProbeScene.End(sceneToRestore);
-            }
+            Probe(world, "REST  (spawned exactly at ride height)", 0.18f, 240);
+            Probe(world, "DROP  (from 2m up)", 2.0f, 240);
         }
 
-        private static void Probe(string label, float startHeight, int steps)
+        private static void Probe(ProbeWorld world, string label, float startHeight, int steps)
         {
-            GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            GameObject ground = world.CreatePrimitive(PrimitiveType.Cube);
             ground.transform.localScale = new Vector3(60f, 1f, 60f);
             ground.transform.position = new Vector3(0f, -0.5f, 0f);
 
-            var boardObject = new GameObject("ProbeBoard");
+            GameObject boardObject = world.CreateObject("ProbeBoard");
             boardObject.transform.position = new Vector3(0f, startHeight, 0f);
 
             Rigidbody rb = boardObject.AddComponent<Rigidbody>();
@@ -71,7 +57,7 @@ namespace FiftyFifty.EditorTools
             for (int i = 0; i < steps; i++)
             {
                 board.SimulateTick(dt);
-                Physics.Simulate(dt);
+                world.Step(dt);
 
                 float height = rb.position.y;
                 float vSpeed = rb.linearVelocity.y;

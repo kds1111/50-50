@@ -1,4 +1,4 @@
-using UnityEditor;
+using System;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -6,55 +6,67 @@ using UnityEngine.SceneManagement;
 namespace FiftyFifty.EditorTools
 {
     /// <summary>
-    /// Borrowing the editor for a moment, and giving it back.
+    /// A private world to measure in, alongside the scene you are working in rather than on top
+    /// of it.
     ///
-    /// The probes need an empty scene to measure in, and the scene builders overwrite one. Both
-    /// used to call NewScene directly, which has two nasty edges: it discards unsaved changes to
-    /// whatever scene you had open without asking, and it destroys the objects the Inspector is
-    /// currently showing, which throws a wall of SerializedObjectNotCreatableException from deep
-    /// inside Unity's own inspectors.
+    /// The probes used to open an empty scene, which replaced whatever you had open. That threw
+    /// away unsaved work and — because the objects the Inspector was showing stopped existing
+    /// underneath it — produced a wall of SerializedObjectNotCreatableException and
+    /// MissingReferenceException from inside Unity's own inspectors. Clearing the selection first
+    /// was not enough: the Inspector rebuilds its editors a frame later, by which point the
+    /// targets are dead, and a locked Inspector ignores the selection entirely. The fix is not to
+    /// destroy anything of yours in the first place.
     ///
-    /// So: ask about unsaved work, drop the selection, do the job, and put the scene you were in
-    /// back when it is done.
+    /// A preview scene is Unity's own answer to this — it is what the prefab editor works in.
+    /// Measured before relying on it: it carries its own physics scene (so Step moves nothing
+    /// outside it), creating and moving objects does not mark your open scene dirty, and closing
+    /// it leaves your scene exactly as it was. The project's global simulation mode is left alone
+    /// too, because a local physics scene only ever advances when you ask it to.
     /// </summary>
-    public static class ProbeScene
+    public sealed class ProbeWorld : IDisposable
     {
-        /// <summary>
-        /// Clears the way and returns the scene to restore afterwards, or null if the user
-        /// cancelled at the save prompt — in which case the caller must not proceed.
-        /// </summary>
-        public static bool Begin(out string sceneToRestore)
+        private readonly Scene _scene;
+        private readonly PhysicsScene _physics;
+        private bool _closed;
+
+        public ProbeWorld()
         {
-            sceneToRestore = null;
-
-            // Ask before throwing away work. Returns false only if the user hits Cancel.
-            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
-            {
-                return false;
-            }
-
-            // The Inspector holds references to objects that are about to stop existing.
-            Selection.objects = new Object[0];
-
-            Scene active = SceneManager.GetActiveScene();
-            sceneToRestore = string.IsNullOrEmpty(active.path) ? null : active.path;
-
-            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-
-            return true;
+            _scene = EditorSceneManager.NewPreviewScene();
+            _physics = _scene.GetPhysicsScene();
         }
 
-        /// <summary>Puts the editor back where it was.</summary>
-        public static void End(string sceneToRestore)
+        /// <summary>Takes an object out of whatever scene it was born in and into this one.</summary>
+        public GameObject Adopt(GameObject go)
         {
-            Selection.objects = new Object[0];
+            EditorSceneManager.MoveGameObjectToScene(go, _scene);
+            return go;
+        }
 
-            if (string.IsNullOrEmpty(sceneToRestore))
+        public GameObject CreatePrimitive(PrimitiveType type)
+        {
+            return Adopt(GameObject.CreatePrimitive(type));
+        }
+
+        public GameObject CreateObject(string name)
+        {
+            return Adopt(new GameObject(name));
+        }
+
+        /// <summary>Advance only this world. Nothing else in the editor moves.</summary>
+        public void Step(float dt)
+        {
+            _physics.Simulate(dt);
+        }
+
+        public void Dispose()
+        {
+            if (_closed)
             {
                 return;
             }
 
-            EditorSceneManager.OpenScene(sceneToRestore, OpenSceneMode.Single);
+            _closed = true;
+            EditorSceneManager.ClosePreviewScene(_scene);
         }
     }
 }

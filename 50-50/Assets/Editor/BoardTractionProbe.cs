@@ -30,28 +30,14 @@ namespace FiftyFifty.EditorTools
         [MenuItem("50-50/Probe Board Traction")]
         public static void Run()
         {
-            if (!ProbeScene.Begin(out string sceneToRestore))
-            {
-                return;
-            }
+            using var world = new ProbeWorld();
 
-            SimulationMode previous = Physics.simulationMode;
-            Physics.simulationMode = SimulationMode.Script;
-
-            try
-            {
-                LandingSlides();
-                Powerslide();
-            }
-            finally
-            {
-                Physics.simulationMode = previous;
-                ProbeScene.End(sceneToRestore);
-            }
+            LandingSlides(world);
+            Powerslide(world);
         }
 
         /// <summary>Drop the board travelling at an angle to its nose and watch it hook up.</summary>
-        private static void LandingSlides()
+        private static void LandingSlides(ProbeWorld world)
         {
             var log = new StringBuilder();
             log.AppendLine("=== LANDING SLIDE ===");
@@ -59,8 +45,8 @@ namespace FiftyFifty.EditorTools
 
             foreach (float angle in new[] { 5f, 15f, 30f, 60f, 90f, 135f })
             {
-                GameObject ground = CreateGround();
-                BoardController board = CreateBoard(new Vector3(0f, 0.9f, 0f), out ScriptedBoardInput input);
+                GameObject ground = CreateGround(world);
+                BoardController board = CreateBoard(world, new Vector3(0f, 0.9f, 0f), out ScriptedBoardInput input);
 
                 Rigidbody rb = board.GetComponent<Rigidbody>();
                 Vector3 travel = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
@@ -76,7 +62,7 @@ namespace FiftyFifty.EditorTools
                 for (int i = 0; i < 300; i++)
                 {
                     board.SimulateTick(Dt);
-                    Physics.Simulate(Dt);
+                    world.Step(Dt);
 
                     if (!landed && board.Grounded)
                     {
@@ -114,7 +100,7 @@ namespace FiftyFifty.EditorTools
         }
 
         /// <summary>Turn at speed with and without the powerslide, and compare.</summary>
-        private static void Powerslide()
+        private static void Powerslide(ProbeWorld world)
         {
             var log = new StringBuilder();
             log.AppendLine("=== POWERSLIDE ===");
@@ -122,8 +108,8 @@ namespace FiftyFifty.EditorTools
 
             foreach (bool drifting in new[] { false, true })
             {
-                GameObject ground = CreateGround();
-                BoardController board = CreateBoard(new Vector3(0f, 0.18f, 0f), out ScriptedBoardInput input);
+                GameObject ground = CreateGround(world);
+                BoardController board = CreateBoard(world, new Vector3(0f, 0.18f, 0f), out ScriptedBoardInput input);
                 Rigidbody rb = board.GetComponent<Rigidbody>();
 
                 // Get up to speed first.
@@ -131,7 +117,7 @@ namespace FiftyFifty.EditorTools
                 for (int i = 0; i < 150; i++)
                 {
                     board.SimulateTick(Dt);
-                    Physics.Simulate(Dt);
+                    world.Step(Dt);
                 }
 
                 float headingIn = board.Heading;
@@ -148,7 +134,7 @@ namespace FiftyFifty.EditorTools
                 for (int i = 0; i < 50; i++)
                 {
                     board.SimulateTick(Dt);
-                    Physics.Simulate(Dt);
+                    world.Step(Dt);
                 }
 
                 float turned = Mathf.Abs(board.Heading - headingIn);
@@ -164,17 +150,17 @@ namespace FiftyFifty.EditorTools
             Debug.Log(log.ToString());
         }
 
-        private static GameObject CreateGround()
+        private static GameObject CreateGround(ProbeWorld world)
         {
-            GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            GameObject ground = world.CreatePrimitive(PrimitiveType.Cube);
             ground.transform.localScale = new Vector3(400f, 1f, 400f);
             ground.transform.position = new Vector3(0f, -0.5f, 0f);
             return ground;
         }
 
-        private static BoardController CreateBoard(Vector3 position, out ScriptedBoardInput input)
+        private static BoardController CreateBoard(ProbeWorld world, Vector3 position, out ScriptedBoardInput input)
         {
-            var go = new GameObject("ProbeBoard");
+            GameObject go = world.CreateObject("ProbeBoard");
             go.transform.position = position;
 
             Rigidbody rb = go.AddComponent<Rigidbody>();

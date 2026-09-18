@@ -22,32 +22,18 @@ namespace FiftyFifty.EditorTools
         [MenuItem("50-50/Probe Ball")]
         public static void Run()
         {
-            if (!ProbeScene.Begin(out string sceneToRestore))
-            {
-                return;
-            }
+            using var world = new ProbeWorld();
 
-            SimulationMode previous = Physics.simulationMode;
-            Physics.simulationMode = SimulationMode.Script;
-
-            try
-            {
-                Drop("DROP (from 3m)", 3f, 400);
-                Roll("ROLL (punched at 14 m/s)", 14f, 500);
-                PunchArc();
-                CarryClearance();
-            }
-            finally
-            {
-                Physics.simulationMode = previous;
-                ProbeScene.End(sceneToRestore);
-            }
+            Drop(world, "DROP (from 3m)", 3f, 400);
+            Roll(world, "ROLL (punched at 14 m/s)", 14f, 500);
+            PunchArc(world);
+            CarryClearance(world);
         }
 
-        private static void Drop(string label, float startHeight, int steps)
+        private static void Drop(ProbeWorld world, string label, float startHeight, int steps)
         {
-            GameObject ground = CreateGround();
-            BallController ball = CreateBall(new Vector3(0f, startHeight, 0f));
+            GameObject ground = CreateGround(world);
+            BallController ball = CreateBall(world, new Vector3(0f, startHeight, 0f));
 
             const float dt = 1f / 50f;
             var log = new StringBuilder();
@@ -62,7 +48,7 @@ namespace FiftyFifty.EditorTools
             for (int i = 0; i < steps; i++)
             {
                 ball.SimulateTick(dt);
-                Physics.Simulate(dt);
+                world.Step(dt);
 
                 float height = ball.Position.y;
                 float speed = ball.Velocity.y;
@@ -104,10 +90,10 @@ namespace FiftyFifty.EditorTools
             Object.DestroyImmediate(ground);
         }
 
-        private static void Roll(string label, float launchSpeed, int steps)
+        private static void Roll(ProbeWorld world, string label, float launchSpeed, int steps)
         {
-            GameObject ground = CreateGround();
-            BallController ball = CreateBall(new Vector3(0f, 0.36f, 0f));
+            GameObject ground = CreateGround(world);
+            BallController ball = CreateBall(world, new Vector3(0f, 0.36f, 0f));
 
             ball.GetComponent<Rigidbody>().linearVelocity = new Vector3(0f, 0f, launchSpeed);
 
@@ -121,7 +107,7 @@ namespace FiftyFifty.EditorTools
             for (int i = 0; i < steps; i++)
             {
                 ball.SimulateTick(dt);
-                Physics.Simulate(dt);
+                world.Step(dt);
 
                 float speed = new Vector2(ball.Velocity.x, ball.Velocity.z).magnitude;
 
@@ -154,12 +140,12 @@ namespace FiftyFifty.EditorTools
         /// the first version measured the cone in 3D and every punch at a ball on the floor
         /// whiffed — the sort of thing that is invisible in code and obvious in a grid.
         /// </summary>
-        private static void PunchArc()
+        private static void PunchArc(ProbeWorld world)
         {
-            BallController ball = CreateBall(new Vector3(0f, 0.35f, 0f));
+            BallController ball = CreateBall(world, new Vector3(0f, 0.35f, 0f));
             Rigidbody ballBody = ball.GetComponent<Rigidbody>();
 
-            var holder = new GameObject("ProbeHandler");
+            GameObject holder = world.CreateObject("ProbeHandler");
             holder.transform.position = Vector3.zero;              // facing +Z
             var handler = holder.AddComponent<BallHandler>();
             handler.Ball = ball;
@@ -200,11 +186,11 @@ namespace FiftyFifty.EditorTools
         /// is left between the ball's surface and the rider. A fixed offset that looked right at
         /// 0.7 m buries a 1.2 m ball in the rider's chest, which is what this catches.
         /// </summary>
-        private static void CarryClearance()
+        private static void CarryClearance(ProbeWorld world)
         {
-            BallController ball = CreateBall(Vector3.zero);
+            BallController ball = CreateBall(world, Vector3.zero);
 
-            var holder = new GameObject("ProbeHandler");
+            GameObject holder = world.CreateObject("ProbeHandler");
             var handler = holder.AddComponent<BallHandler>();
             handler.Ball = ball;
             handler.Board = null;
@@ -235,17 +221,17 @@ namespace FiftyFifty.EditorTools
             Object.DestroyImmediate(ball.gameObject);
         }
 
-        private static GameObject CreateGround()
+        private static GameObject CreateGround(ProbeWorld world)
         {
-            GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            GameObject ground = world.CreatePrimitive(PrimitiveType.Cube);
             ground.transform.localScale = new Vector3(200f, 1f, 200f);
             ground.transform.position = new Vector3(0f, -0.5f, 0f);
             return ground;
         }
 
-        private static BallController CreateBall(Vector3 position)
+        private static BallController CreateBall(ProbeWorld world, Vector3 position)
         {
-            var go = new GameObject("ProbeBall");
+            GameObject go = world.CreateObject("ProbeBall");
             go.transform.position = position;
 
             BallController ball = go.AddComponent<BallController>();
