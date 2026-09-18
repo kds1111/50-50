@@ -18,9 +18,11 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 **Landing** — the resolution of a trick when the board returns to a surface. A clean binary: you **land** it or you **bail**. A named trick lands if it ran its full duration before touchdown and bails if it did not ([#6](https://github.com/kds1111/50-50/issues/6)); a spin can never bail. *Sketchy* was a third grade in the original design and was struck on [#8](https://github.com/kds1111/50-50/issues/8) — the commitment model produces a binary, and a middle grade would have needed its own threshold, payout fraction and feedback for nothing.
 
-**Bail** — a failed landing. Costs some or all of the pending bank; how much is an open decision.
+**Grind** — riding along a rail or a ledge edge, locked onto it: the board is snapped onto a grind line rather than balanced on geometry by the physics. Named by the board's angle to the rail at lock-on — **50-50** along it, **Boardslide** across it. Locking on counts as a landing. Pays the bank per second past a minimum time, capped per grind. Popping out or riding off the end banks it; stalling or being hit by the ball is a fall, which is a bail. Under the minimum it is a **graze**: nothing earned, nothing lost ([#12](https://github.com/kds1111/50-50/issues/12)). Lip tricks — stalls on coping — are out of the slice.
 
-**Bank** (or **pending bank**) — a **multiplier** accumulated from landed tricks but not yet scored. Starts at 1.00; each landed trick adds to it ([#8](https://github.com/kds1111/50-50/issues/8)). Visible to the player *and to the opponent*, at risk until cemented, and lost entirely on a bail or on conceding. The bank is the hook of the whole game.
+**Bail** — a failed landing: a named trick unfinished at touchdown, or a fall from a grind. Wipes the pending bank entirely ([#8](https://github.com/kds1111/50-50/issues/8)), then a knockdown in place and a respawn at the nearest safe point ([#6](https://github.com/kds1111/50-50/issues/6)).
+
+**Bank** (or **pending bank**) — a **multiplier** accumulated from landed tricks but not yet scored. Starts at 1.00; each landed trick adds to it, and it clamps at a cap rather than growing forever ([#8](https://github.com/kds1111/50-50/issues/8)). Visible to the player *and to the opponent*, at risk until cemented, and lost entirely on a bail or on conceding. The bank is the hook of the whole game.
 
 **Cement** — to convert the pending bank into permanent score. Scoring a goal is the only thing that cements, and a goal pays exactly the bank. Cementing resets the bank to 1.00 ([#8](https://github.com/kds1111/50-50/issues/8)).
 
@@ -30,7 +32,9 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 **Arena** — the playfield. A concrete skatepark-stadium: a goal at each end, ramps and rideable surfaces for generating air, walls and a ceiling as boundaries.
 
-**Goal** — both the structure and the act of putting the ball in it. Scoring a goal cements the scorer's bank.
+**Goal** — both the structure and the act of putting the ball in it. Every goal belongs to a **side**. The ball going in cements the attacking side's bank and forfeits the defending side's — credited by where the ball went, not by who touched it last, so an own goal counts for the opponent ([#20](https://github.com/kds1111/50-50/issues/20)).
+
+**Side** — which end a player plays for: **A** or **B**. Side A starts at the −Z end and attacks +Z. A goal is *defended by* one side; a bot plays for a side exactly as a human does.
 
 **Ball** — the contested object. A large, floaty rigidbody, readable at speed.
 

@@ -261,6 +261,7 @@ namespace FiftyFifty.Board
         [SerializeField] private float _heading;
         [SerializeField] private float _timeInAir;
         [SerializeField] private float _airYawTurns;
+        [SerializeField] private float _landedYawTurns;
         /// <summary>
         /// Which end of the board is forward: +1 nose, -1 tail.
         ///
@@ -300,6 +301,25 @@ namespace FiftyFifty.Board
 
         /// <summary>Signed turns of yaw accumulated since leaving the ground. Reset by a pop.</summary>
         public float AirYawTurns => _airYawTurns;
+
+        /// <summary>
+        /// The yaw of the air that just ended, kept from touchdown until the next one. This is what
+        /// a spin is named from.
+        ///
+        /// It exists because touchdown zeroes <see cref="AirYawTurns"/> in the same step, and the
+        /// trick system reads after this controller does — so reading the live value on landing
+        /// always saw 0, and every spin since the ball landed (#7) classified as a generic air.
+        /// </summary>
+        public float LandedYawTurns => _landedYawTurns;
+
+        /// <summary>An ollie would fire this tick if asked for.</summary>
+        public bool CanOllie => !OllieBlocked && _popTimer <= 0f;
+
+        /// <summary>
+        /// Set by a component that can take over the board's motion — BoardGrindController while
+        /// it is enabled, null otherwise. Null is the board exactly as it was before grinds.
+        /// </summary>
+        [System.NonSerialized] public IBoardMotionOverride MotionOverride;
 
         /// <summary>
         /// STAND-IN for the trick tag #6 will provide. A plain ollie accumulates no yaw, so it
@@ -460,29 +480,38 @@ namespace FiftyFifty.Board
             _forward = _rb.rotation * Vector3.forward;
             _right = _rb.rotation * Vector3.right;
 
-            _rb.AddForce(Physics.gravity * GravityScale, ForceMode.Acceleration);
-
             bool wasGrounded = _grounded;
-            ApplySuspension(dt);
 
-            if (_grounded)
+            // A grind (#12) may own this tick's motion. Asked before gravity, because a board
+            // held on a rail must not also be falling.
+            if (MotionOverride != null && MotionOverride.Step(this, dt))
             {
-                if (!wasGrounded)
-                {
-                    OnTouchdown();
-                }
-
-                UpdateTraction(dt);
-                Steer(dt);
-                ApplyDrive(dt);
-                ApplyGrip(dt);
+                HoldForOverride(wasGrounded);
             }
             else
             {
-                EndTraction();
-                _timeInAir += dt;
-                SpinInAir(dt);
-                _rb.AddForce(-_rb.linearVelocity * AirDrag, ForceMode.Acceleration);
+                _rb.AddForce(Physics.gravity * GravityScale, ForceMode.Acceleration);
+                ApplySuspension(dt);
+
+                if (_grounded)
+                {
+                    if (!wasGrounded)
+                    {
+                        OnTouchdown(landingSlide: true);
+                    }
+
+                    UpdateTraction(dt);
+                    Steer(dt);
+                    ApplyDrive(dt);
+                    ApplyGrip(dt);
+                }
+                else
+                {
+                    EndTraction();
+                    _timeInAir += dt;
+                    SpinInAir(dt);
+                    _rb.AddForce(-_rb.linearVelocity * AirDrag, ForceMode.Acceleration);
+                }
             }
 
             ApplyOllie();
@@ -957,14 +986,51 @@ namespace FiftyFifty.Board
             _rb.MoveRotation(Quaternion.LookRotation(forwardOnSurface.normalized, _surfaceUp));
         }
 
-        private void OnTouchdown()
+        /// <summary>
+        /// The override moved the board this tick. It counts as standing on something — that is
+        /// what lets an ollie pop out of a grind and a trick resolve on touching a rail — but
+        /// there is no surface to suspend from, drive on or grip.
+        /// </summary>
+        private void HoldForOverride(bool wasGrounded)
+        {
+            _grounded = true;
+            _wheelsOnGround = 0;
+            _groundNormal = Vector3.up;
+
+            if (!wasGrounded)
+            {
+                // No landing slide: a boardslide is across its own travel by definition, and
+                // the slide would read it as the most crooked landing possible.
+                OnTouchdown(landingSlide: false);
+            }
+
+            EndTraction();
+            _slideTimer = 0f;
+            _powerslideRecoveryTimer = 0f;
+        }
+
+        /// <summary>
+        /// Point the board. For a motion override (a grind snapping to its rail) and nothing
+        /// else — steering and the air spin already own the heading everywhere else.
+        /// </summary>
+        public void SetHeading(float heading)
+        {
+            _heading = heading;
+        }
+
+        private void OnTouchdown(bool landingSlide)
         {
             _settleTimer = LandingSettleTime;
             _timeInAir = 0f;
+            _landedYawTurns = _airYawTurns;
             _airYawTurns = 0f;
 
             PickLeadEnd();
-            BeginLandingSlide();
+
+            if (landingSlide)
+            {
+                BeginLandingSlide();
+            }
 
             // Deliberately does NOT cancel the board's fall. It used to, and the spring then
             // fired in the same step at a force computed from the impact speed that had just
@@ -1017,6 +1083,7 @@ namespace FiftyFifty.Board
             _powersliding = false;
             _grip = SidewaysGrip;
             _airYawTurns = 0f;
+            _landedYawTurns = 0f;
             _leadEnd = 1f;
             _wobbleAmplitude = 0f;
             _wobbleOffset = 0f;

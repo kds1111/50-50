@@ -1,4 +1,5 @@
 using FiftyFifty.Board;
+using FiftyFifty.Board.Grinds;
 using UnityEngine;
 
 namespace FiftyFifty.Ball
@@ -35,10 +36,12 @@ namespace FiftyFifty.Ball
         public string LastVerdict => _lastVerdict;
 
         private BoardController _board;
+        private BoardGrindController _grind;
 
         private void Awake()
         {
             _board = GetComponent<BoardController>();
+            _grind = GetComponent<BoardGrindController>();
         }
 
         private void OnCollisionEnter(Collision collision)
@@ -60,6 +63,15 @@ namespace FiftyFifty.Ball
             if (impulse < MinimumImpulse)
             {
                 _lastVerdict = "ignored (too soft)";
+                return;
+            }
+
+            // A grinder counts as grounded, but is not safe: a hit knocks you off the rail, and
+            // coming off is a fall (#12). Asked before the grounded check for exactly that reason.
+            if (_grind != null && _grind.Grinding)
+            {
+                _grind.KnockOff();
+                _lastVerdict = $"KNOCKED OFF RAIL ({impulse:0.0})";
                 return;
             }
 

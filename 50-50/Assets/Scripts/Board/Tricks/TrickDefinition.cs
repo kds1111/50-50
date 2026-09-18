@@ -11,7 +11,8 @@ namespace FiftyFifty.Board.Tricks
     }
 
     /// <summary>
-    /// One named trick. A name, an axis, how far it turns, how long it takes and what it pays.
+    /// One named trick. A name, an axis, how far it turns, how long it takes and what it adds to
+    /// the bank.
     ///
     /// Plain C# with no Unity types on purpose (#1's 90/10 split): the trick table and its
     /// rules are testable headlessly, and only the MonoBehaviour that drives them needs an
@@ -25,7 +26,9 @@ namespace FiftyFifty.Board.Tricks
     ///   Seconds   — FIXED, not a fraction of available airtime (#6 rule 4). Fixed is what
     ///               makes ramp size mean something: a long trick needs a big transition, and
     ///               asking for one you have no room for is a bail.
-    ///   BasePoints— placeholder. Point values are balance and belong to #8.
+    ///   BankValue — what landing it adds to the bank (#8): 0.05 for every flip today. Stored
+    ///               per trick so pricing them apart later is a data change. Any spin bonus
+    ///               stacks on top, and repetition decays the two together.
     /// </summary>
     public sealed class TrickDefinition
     {
@@ -33,15 +36,15 @@ namespace FiftyFifty.Board.Tricks
         public readonly TrickAxis Axis;
         public readonly float Turns;
         public readonly float Seconds;
-        public readonly float BasePoints;
+        public readonly float BankValue;
 
-        public TrickDefinition(string name, TrickAxis axis, float turns, float seconds, float basePoints)
+        public TrickDefinition(string name, TrickAxis axis, float turns, float seconds, float bankValue)
         {
             Name = name;
             Axis = axis;
             Turns = turns;
             Seconds = seconds;
-            BasePoints = basePoints;
+            BankValue = bankValue;
         }
 
         public override string ToString() => Name;

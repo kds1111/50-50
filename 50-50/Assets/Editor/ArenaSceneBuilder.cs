@@ -1,5 +1,6 @@
 using FiftyFifty.Ball;
 using FiftyFifty.Board;
+using FiftyFifty.Board.Grinds;
 using FiftyFifty.Board.Tricks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -77,6 +78,7 @@ namespace FiftyFifty.EditorTools
 
             // Goals face inward from each end, and DO scale — at this size a 9 m goal is a
             // rounding error you could never find, let alone shoot at.
+            // Sides are assigned by ScoringWiring below: the -Z goal is side A's.
             ArenaParts.CreateGoal(new Vector3(0f, 0f, HalfLength - 2f), 0f, 9f * Scale, 4f * Scale);
             ArenaParts.CreateGoal(new Vector3(0f, 0f, -(HalfLength - 2f)), 180f, 9f * Scale, 4f * Scale);
 
@@ -85,9 +87,10 @@ namespace FiftyFifty.EditorTools
             GameObject board = GreyboxParts.CreateBoard(new Vector3(0f, 0.4f, -10f));
             var controller = board.GetComponent<BoardController>();
             var tricks = board.AddComponent<BoardTrickController>();
+            board.AddComponent<BoardGrindController>();
 
-            // Ball on the centre spot. There is no kickoff yet (#22) and no score (#20) — the
-            // goals still only count entries, per #7.
+            // Ball on the centre spot. There is no kickoff yet (#22), so after a goal the ball
+            // stays where it went; the goal's lockout stops it scoring twice.
             BallController ball = GreyboxParts.CreateBall(new Vector3(0f, 1.5f, 0f));
 
             var handler = board.AddComponent<BallHandler>();
@@ -97,6 +100,10 @@ namespace FiftyFifty.EditorTools
 
             GreyboxParts.CreateCamera(board);
             CreateHud(controller, tricks);
+
+            // The bank (#20), and goal sides by the -Z-is-side-A convention. Same code as the
+            // menu item, so a rebuilt scene and a wired one match.
+            ScoringWiring.WireOpenScene();
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -137,8 +144,8 @@ namespace FiftyFifty.EditorTools
             // toward a goal — deliberately small, so it is a shortcut rather than the whole game.
             Place(p => ArenaParts.CreateBank(p, 0f, 14f, 7f, 7f, "Kicker"), origin + new Vector3(5f, 0f, 27f));
 
-            // Street furniture. Nothing detects a grind yet (#12, blocked on this ticket), but a
-            // ledge is a thing to pop off and a rail is a thing to be in the way.
+            // Street furniture. Rails and ledges carry GrindRail (#12); the manual pad and the
+            // stairs are deliberately not grindable.
             Place(p => ArenaParts.CreateLedge(p, 0f, 11f, 0.6f, "Hubba"), origin + new Vector3(-7f, 0f, 14f));
             Place(p => ArenaParts.CreateRail(p, 0f, 9f, 0.5f), origin + new Vector3(-2f, 0f, 30f));
             Place(p => ArenaParts.CreateManualPad(p, 0f, 4f, 9f), origin + new Vector3(9f, 0f, 19f));

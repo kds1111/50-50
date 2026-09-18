@@ -62,6 +62,10 @@ namespace FiftyFifty.EditorTools
             GreyboxParts.CreateCamera(board);
             CreateHud(board.GetComponent<BoardController>(), tricks);
 
+            // The bank (#20), and goal sides by the -Z-is-side-A convention. Same code as the
+            // menu item, so a rebuilt scene and a wired one match.
+            ScoringWiring.WireOpenScene();
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
             Debug.Log($"[50-50] Trick test scene written to {ScenePath}");

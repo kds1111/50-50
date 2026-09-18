@@ -36,45 +36,35 @@ namespace FiftyFifty.Board.Tricks
         /// </param>
         public static string Classify(float turns, float tolerance = 0.2f)
         {
+            int halves = HalfTurns(turns, tolerance);
+            return halves == 0 ? GenericAir : (halves * 180).ToString();
+        }
+
+        /// <summary>
+        /// How many clean half-turns a spin counts as: 1 for a 180, 2 for a 360, and so on. 0 for
+        /// anything that is not a name — too little rotation, or too far between two names.
+        ///
+        /// This is what the bank prices a spin from (#8), which is why it shares its rule with
+        /// <see cref="Classify"/> exactly: a spin the HUD calls "Air" must never pay as a 180.
+        /// </summary>
+        public static int HalfTurns(float turns, float tolerance = 0.2f)
+        {
             float magnitude = Math.Abs(turns);
 
             // Below half a turn there is nothing to name. An ollie is not a trick (#6 rule 12).
             if (magnitude < 0.5f - tolerance)
             {
-                return GenericAir;
+                return 0;
             }
 
             float halves = (float)Math.Round(magnitude * 2f);
-            float quantised = halves * 0.5f;
 
-            if (Math.Abs(magnitude - quantised) > tolerance)
+            if (Math.Abs(magnitude - (halves * 0.5f)) > tolerance)
             {
-                return GenericAir;
+                return 0;
             }
 
-            int degrees = (int)Math.Round(quantised * 360f);
-            return degrees.ToString();
-        }
-
-        /// <summary>
-        /// The multiplier a spin contributes. A named trick supplies the name, the spin supplies
-        /// this (#6 rule 2) — THPS's model, where rotation is a parallel channel rather than part
-        /// of the trick's identity.
-        ///
-        /// The curve is a PLACEHOLDER. How a spin scales, whether it caps, and what it is worth
-        /// relative to a named trick are all balance and belong to #8.
-        /// </summary>
-        public static float Multiplier(float turns, float perHalfTurn = 0.5f, float tolerance = 0.2f)
-        {
-            float magnitude = Math.Abs(turns);
-
-            if (magnitude < 0.5f - tolerance)
-            {
-                return 1f;
-            }
-
-            float halves = (float)Math.Round(magnitude * 2f);
-            return 1f + (halves * perHalfTurn);
+            return (int)halves;
         }
     }
 }

@@ -14,8 +14,8 @@ namespace FiftyFifty.Board.Tricks
     ///
     /// The model (#6):
     ///   - SPIN is classified, never commanded by this component. Yaw accumulates in
-    ///     BoardController as it always has; on landing it is named and contributes a
-    ///     multiplier. A spin is never punished and can never bail.
+    ///     BoardController as it always has; on landing it is named and reported. A spin is
+    ///     never punished and can never bail.
     ///   - NAMED TRICKS are asked for by input, run for a FIXED duration, and are the only
     ///     thing in the game that can cost a player the bank.
     ///
@@ -25,8 +25,8 @@ namespace FiftyFifty.Board.Tricks
     /// What this component deliberately does NOT do:
     ///   - It does not rotate the board. Flips and shuvits rotate a cosmetic child mesh only;
     ///     simulation heading is never written (#16's law, #6 rule 8).
-    ///   - It does not score. It reports trick names, outcomes and a multiplier; the bank that
-    ///     consumes them is #20, and what any of it is worth is #8.
+    ///   - It does not score. It reports what landed and what bailed; the bank (PlayerBank, #20)
+    ///     decides what that is worth, by #8's rules.
     /// </summary>
     [DefaultExecutionOrder(100)]
     [RequireComponent(typeof(BoardController))]
@@ -52,11 +52,12 @@ namespace FiftyFifty.Board.Tricks
                      "#9's arena says what airtime its ramps give. Measure, then set.")]
             public float Seconds = 0.45f;
 
-            [Tooltip("PLACEHOLDER. Point values are balance and belong to #8.")]
-            public float BasePoints = 100f;
+            [Tooltip("What landing this adds to the bank (#8). 0.05 for every flip to start; the " +
+                     "spin bonus stacks on top, and repeating the trick decays both together.")]
+            public float BankValue = 0.05f;
 
             public TrickDefinition ToDefinition() =>
-                new TrickDefinition(Name, Axis, Turns, Seconds, BasePoints);
+                new TrickDefinition(Name, Axis, Turns, Seconds, BankValue);
         }
 
         [Header("Master switch")]
@@ -69,9 +70,9 @@ namespace FiftyFifty.Board.Tricks
                  "on PlayerBoardInput; the bindings themselves are still open on #6.")]
         public TrickSettings[] Tricks =
         {
-            new TrickSettings { Name = "Kickflip", Axis = TrickAxis.Roll, Turns = -1f, Seconds = 0.45f, BasePoints = 100f },
-            new TrickSettings { Name = "Heelflip", Axis = TrickAxis.Roll, Turns = 1f, Seconds = 0.45f, BasePoints = 100f },
-            new TrickSettings { Name = "Shuvit", Axis = TrickAxis.Yaw, Turns = 0.5f, Seconds = 0.40f, BasePoints = 80f },
+            new TrickSettings { Name = "Kickflip", Axis = TrickAxis.Roll, Turns = -1f, Seconds = 0.45f, BankValue = 0.05f },
+            new TrickSettings { Name = "Heelflip", Axis = TrickAxis.Roll, Turns = 1f, Seconds = 0.45f, BankValue = 0.05f },
+            new TrickSettings { Name = "Shuvit", Axis = TrickAxis.Yaw, Turns = 0.5f, Seconds = 0.40f, BankValue = 0.05f },
         };
 
         [Header("Spin")]
@@ -79,9 +80,6 @@ namespace FiftyFifty.Board.Tricks
                  "purpose: airtime is short, so exact multiples are rare, and an unnamed rotation " +
                  "reads as a generic air rather than a guess.")]
         [Range(0.05f, 0.45f)] public float SpinTolerance = 0.2f;
-
-        [Tooltip("PLACEHOLDER multiplier added per half-turn. Balance, and #8's to decide.")]
-        public float SpinMultiplierPerHalfTurn = 0.5f;
 
         [Header("Bail")]
         [Tooltip("Whether an unfinished trick bails at all. Off makes every trick land, which is " +
@@ -109,7 +107,6 @@ namespace FiftyFifty.Board.Tricks
         [SerializeField] private string _lastTrick = "-";
         [SerializeField] private string _lastSpin = "-";
         [SerializeField] private string _lastOutcome = "-";
-        [SerializeField] private float _lastMultiplier = 1f;
         [SerializeField] private bool _knockedDown;
 
         private BoardController _board;
@@ -137,7 +134,6 @@ namespace FiftyFifty.Board.Tricks
         public string LastTrick => _lastTrick;
         public string LastSpin => _lastSpin;
         public string LastOutcome => _lastOutcome;
-        public float LastMultiplier => _lastMultiplier;
         public float TrickProgress => _run.Progress;
 
         /// <summary>
@@ -147,10 +143,10 @@ namespace FiftyFifty.Board.Tricks
         public event Action Bailed;
 
         /// <summary>
-        /// Raised when a trick and/or spin is credited on landing: trick name (may be null),
-        /// spin name, and the spin multiplier. The bank on #20 is what will consume this.
+        /// Raised on every clean touchdown — a landed trick, a pure spin, or a plain ollie. The
+        /// bank (#20) is what prices it; this component only says what happened.
         /// </summary>
-        public event Action<TrickDefinition, string, float> Landed;
+        public event Action<TrickLanding> Landed;
 
         private void Awake()
         {
@@ -298,15 +294,16 @@ namespace FiftyFifty.Board.Tricks
 
         private void Touchdown()
         {
-            float turns = _board.AirYawTurns;
+            // The yaw of the air that just ended. The live value is already zeroed: the board's
+            // own touchdown ran earlier this step.
+            float turns = _board.LandedYawTurns;
             string spin = SpinClassifier.Classify(turns, SpinTolerance);
-            float multiplier = SpinClassifier.Multiplier(turns, SpinMultiplierPerHalfTurn);
+            int halfTurns = SpinClassifier.HalfTurns(turns, SpinTolerance);
 
             TrickDefinition attempted = _run.Trick;
             TrickLandingOutcome outcome = _run.Land();
 
             _lastSpin = spin;
-            _lastMultiplier = multiplier;
 
             switch (outcome)
             {
@@ -318,7 +315,7 @@ namespace FiftyFifty.Board.Tricks
                     _liveRotation = _restRotation;
                     _lastTrick = attempted.Name;
                     _lastOutcome = "LANDED";
-                    Landed?.Invoke(attempted, spin, multiplier);
+                    Landed?.Invoke(new TrickLanding(attempted, spin, halfTurns));
                     break;
 
                 case TrickLandingOutcome.Bailed:
@@ -341,9 +338,30 @@ namespace FiftyFifty.Board.Tricks
                     _lastTrick = "-";
                     _lastOutcome = spin == SpinClassifier.GenericAir ? "air" : "spin";
                     _liveRotation = _restRotation;
-                    Landed?.Invoke(null, spin, multiplier);
+                    Landed?.Invoke(new TrickLanding(null, spin, halfTurns));
                     break;
             }
+        }
+
+        /// <summary>
+        /// A fall that did not come from a trick — coming off a grind (#12). Same bail, same cost
+        /// (#6 rule 17): knockdown, respawn, bank forfeited, ball fumbled.
+        ///
+        /// Returns false when nothing happened: tricks off, bails off, or already down. The caller
+        /// then just lets the player drop, which is what "bail off" means everywhere else.
+        /// </summary>
+        public bool Bail()
+        {
+            if (!isActiveAndEnabled || !TricksEnabled || !BailEnabled || _knockedDown)
+            {
+                return false;
+            }
+
+            _run.Reset();
+            _bufferedSlot = 0;
+            _lastOutcome = "BAIL";
+            BeginKnockdown();
+            return true;
         }
 
         private void BeginKnockdown()
@@ -410,6 +428,11 @@ namespace FiftyFifty.Board.Tricks
             _board.ExternalTopSpeedScale = 1f;
             _board.ExternalTurnScale = 1f;
             _board.OllieBlocked = false;
+
+            // Set by BeginKnockdown and never cleared before the bank existed to notice. In a
+            // scene with a BallHandler it was rewritten every tick and so looked fine; without
+            // one, the first bail blocked trick credit for the rest of the session.
+            _board.TrickCreditBlocked = false;
         }
 
         private Quaternion RotationFor(TrickDefinition trick, float progress)

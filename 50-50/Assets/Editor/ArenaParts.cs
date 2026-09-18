@@ -1,4 +1,5 @@
 using FiftyFifty.Ball;
+using FiftyFifty.Board.Grinds;
 using UnityEngine;
 
 namespace FiftyFifty.EditorTools
@@ -39,9 +40,8 @@ namespace FiftyFifty.EditorTools
         }
 
         /// <summary>
-        /// A grindable edge. Nothing detects a grind yet — that is #12, and it is blocked on this
-        /// ticket and #6 — but the geometry has to exist before the question can be argued, and
-        /// a ledge is also just a thing to pop off.
+        /// A grindable edge (#12). Wide enough that each long top edge is its own grind line; the
+        /// top between them is floor you can ride on.
         /// </summary>
         public static GameObject CreateLedge(
             Vector3 position, float yaw, float length, float height, string name = "Ledge")
@@ -53,10 +53,11 @@ namespace FiftyFifty.EditorTools
                 position + new Vector3(0f, height * 0.5f, 0f),
                 Quaternion.Euler(0f, yaw, 0f));
             GreyboxParts.Paint(ledge, DarkConcrete);
+            ledge.AddComponent<GrindRail>();
             return ledge;
         }
 
-        /// <summary>A flat bar on two posts. Same note as the ledge: geometry before detection.</summary>
+        /// <summary>A flat bar on two posts. The bar is the grind line; the posts are just posts.</summary>
         public static GameObject CreateRail(
             Vector3 position, float yaw, float length, float height, string name = "Rail")
         {
@@ -69,6 +70,7 @@ namespace FiftyFifty.EditorTools
             bar.transform.localPosition = new Vector3(0f, height, 0f);
             bar.transform.localScale = new Vector3(0.12f, 0.12f, length);
             GreyboxParts.Paint(bar, Metal);
+            bar.AddComponent<GrindRail>();
 
             for (int i = 0; i < 2; i++)
             {
@@ -141,8 +143,8 @@ namespace FiftyFifty.EditorTools
         }
 
         /// <summary>
-        /// A goal. Still the dumb target from #7 — it counts entries and nothing else, because a
-        /// target that scored would prejudge #8 and #20.
+        /// A goal. It scores (#20) once it knows whose net it is — ScoringWiring assigns that by
+        /// which end of the arena it sits at.
         /// </summary>
         public static GoalTargetVolume CreateGoal(Vector3 position, float yaw, float width, float height)
         {
