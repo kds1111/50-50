@@ -39,6 +39,13 @@ namespace FiftyFifty.Ball
                  "screen, in the lane you are about to punch it down.")]
         public Vector3 CarryOffset = new Vector3(0.38f, 1.05f, 0.25f);
 
+        [Tooltip("Hold the ball clear of the body by its own size, so making the ball bigger " +
+                 "pushes it further out instead of burying it in the rider.")]
+        public bool ClearCarryForBallSize = true;
+
+        [Tooltip("Gap between the carried ball's surface and the offset point above, in metres.")]
+        public float CarryClearance = 0.1f;
+
         [Header("Grab")]
         public bool GrabEnabled = true;
 
@@ -66,6 +73,19 @@ namespace FiftyFifty.Ball
         [Tooltip("Seconds you cannot grab after the timer runs out. Without this, carry into " +
                  "re-grab into carry is a permanent state and the timer is not a limit.")]
         public float GrabCooldown = 1.5f;
+
+        [Tooltip("Seconds the ball must be out of your hands before the hold meter starts " +
+                 "refilling. This is what stops juggling: dropping and re-catching does not " +
+                 "give you a fresh three seconds, it just pauses the clock.")]
+        public float HoldRefillDelay = 2f;
+
+        [Tooltip("Seconds of hold regained per second once refilling. 1 = real time, 0.5 = half " +
+                 "as fast as you spent it, high numbers = near instant.")]
+        public float HoldRefillRate = 1f;
+
+        [Tooltip("Hold you need banked before you may grab at all. Without a floor you can grab " +
+                 "on an empty meter and fumble in the same breath, which is a free punt.")]
+        public float MinHoldToGrab = 0.5f;
 
         [Tooltip("How hard a fumble throws the ball forward. Forward rather than at your feet, " +
                  "so running the clock out still advances the ball instead of stalling play.")]
@@ -128,6 +148,7 @@ namespace FiftyFifty.Ball
         [Header("Debug (read-only)")]
         [SerializeField] private bool _carrying;
         [SerializeField] private float _holdRemaining;
+        [SerializeField] private float _timeSinceRelease;
         [SerializeField] private float _grabCooldownRemaining;
         [SerializeField] private float _punchCooldownRemaining;
         [SerializeField] private float _lastPunchSpeed;
@@ -138,13 +159,41 @@ namespace FiftyFifty.Ball
         /// <summary>Would a punch connect right now? On the HUD, so a whiff is legible.</summary>
         public bool BallInPunchArc => Ball != null && !Ball.Carried && InPunchArc();
         public float HoldRemaining => _holdRemaining;
+        public bool HoldMeterFull => _holdRemaining >= HoldSeconds - 0.01f;
+        public bool CanGrabNow => !HoldLimitEnabled || _holdRemaining >= MinHoldToGrab;
         public float GrabCooldownRemaining => _grabCooldownRemaining;
         public float PunchCooldownRemaining => _punchCooldownRemaining;
         public float LastPunchSpeed => _lastPunchSpeed;
         public string LastEvent => _lastEvent;
 
         /// <summary>Where the ball sits while this handler carries it.</summary>
-        public Vector3 CarryWorldPoint => BodyPosition + (BodyRotation * CarryOffset);
+        public Vector3 CarryWorldPoint => BodyPosition + (BodyRotation * EffectiveCarryOffset);
+
+        /// <summary>
+        /// The carry offset, pushed outward by the carried ball's radius. CarryOffset alone is
+        /// a point, and a point is the wrong thing to aim at: the bigger the ball, the further
+        /// its surface reaches back toward the rider, so a fixed offset that looks right at
+        /// 0.7 m clips straight through the body at 1.2 m.
+        /// </summary>
+        public Vector3 EffectiveCarryOffset
+        {
+            get
+            {
+                if (!ClearCarryForBallSize || Ball == null)
+                {
+                    return CarryOffset;
+                }
+
+                var flat = new Vector3(CarryOffset.x, 0f, CarryOffset.z);
+
+                if (flat.sqrMagnitude < 0.0001f)
+                {
+                    return CarryOffset;
+                }
+
+                return CarryOffset + (flat.normalized * (Ball.CarriedRadius + CarryClearance));
+            }
+        }
 
         // Board.Body is null outside play mode (Awake has not run), which gizmos hit.
         private Vector3 BodyPosition =>
@@ -171,6 +220,8 @@ namespace FiftyFifty.Ball
             {
                 Board = GetComponent<BoardController>();
             }
+
+            _holdRemaining = HoldSeconds;
         }
 
         private void FixedUpdate()
@@ -196,6 +247,10 @@ namespace FiftyFifty.Ball
             {
                 Ball.SetCarryPoint(CarryWorldPoint, BodyVelocity);
                 TickHoldTimer(dt);
+            }
+            else
+            {
+                RefillHoldMeter(dt);
             }
 
             if (input.PunchPressed)
@@ -233,14 +288,45 @@ namespace FiftyFifty.Ball
             // Fumbled, not bailed. What a bail costs is #6's decision, not this ticket's.
             Ball.Release(BodyVelocity + (AimDirection * FumbleForwardSpeed), Ball.FumbleClip);
             _carrying = false;
+            _holdRemaining = 0f;
+            _timeSinceRelease = 0f;
             _grabCooldownRemaining = GrabCooldown;
             _lastEvent = "FUMBLE (held too long)";
+        }
+
+        /// <summary>
+        /// The hold meter is a budget, not a per-grab timer. It only starts coming back once the
+        /// ball has been out of your hands for a while — otherwise dropping and re-catching
+        /// refills it, and you can juggle the ball down the pitch forever with no clock on you.
+        /// </summary>
+        private void RefillHoldMeter(float dt)
+        {
+            if (!HoldLimitEnabled)
+            {
+                _holdRemaining = HoldSeconds;
+                return;
+            }
+
+            _timeSinceRelease += dt;
+
+            if (_timeSinceRelease < HoldRefillDelay)
+            {
+                return;
+            }
+
+            _holdRemaining = Mathf.Min(HoldSeconds, _holdRemaining + (HoldRefillRate * dt));
         }
 
         private void TryGrab()
         {
             if (!GrabEnabled || _grabCooldownRemaining > 0f || Ball.Carried)
             {
+                return;
+            }
+
+            if (!CanGrabNow)
+            {
+                _lastEvent = $"no grab — meter {_holdRemaining:0.0}s / needs {MinHoldToGrab:0.0}s";
                 return;
             }
 
@@ -268,14 +354,14 @@ namespace FiftyFifty.Ball
 
             Ball.Attach(this, CarryWorldPoint, BodyVelocity);
             _carrying = true;
-            _holdRemaining = HoldSeconds;
-            _lastEvent = "GRAB";
+            _lastEvent = $"GRAB ({_holdRemaining:0.0}s of hold left)";
         }
 
         private void Drop()
         {
             Ball.Release(BodyVelocity);
             _carrying = false;
+            _timeSinceRelease = 0f;
             _grabCooldownRemaining = Mathf.Max(_grabCooldownRemaining, RegrabDelay);
             _lastEvent = "drop";
         }
@@ -298,6 +384,7 @@ namespace FiftyFifty.Ball
                 }
 
                 _carrying = false;
+                _timeSinceRelease = 0f;
                 _grabCooldownRemaining = Mathf.Max(_grabCooldownRemaining, RegrabDelay);
                 Strike("PUNCH (from carry)");
                 return;
@@ -375,12 +462,14 @@ namespace FiftyFifty.Ball
             return Vector3.Angle(aimFlat, flat) <= PunchConeDegrees * 0.5f;
         }
 
-        private Vector3 PunchOrigin => BodyPosition + (BodyRotation * new Vector3(0f, CarryOffset.y, 0f));
+        private Vector3 PunchOrigin =>
+            BodyPosition + (BodyRotation * new Vector3(0f, CarryOffset.y, 0f));
 
         /// <summary>Someone took it off us. Called by whoever did.</summary>
         public void ForceRelease()
         {
             _carrying = false;
+            _timeSinceRelease = 0f;
             _grabCooldownRemaining = Mathf.Max(_grabCooldownRemaining, GrabCooldown);
             _lastEvent = "STRIPPED";
         }
@@ -403,6 +492,7 @@ namespace FiftyFifty.Ball
         {
             _carrying = false;
             _holdRemaining = HoldSeconds;
+            _timeSinceRelease = HoldRefillDelay;
             _grabCooldownRemaining = 0f;
             _punchCooldownRemaining = 0f;
             _lastEvent = "-";
@@ -412,7 +502,7 @@ namespace FiftyFifty.Ball
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = new Color(0.2f, 0.9f, 0.6f, 0.9f);
-            Gizmos.DrawWireSphere(CarryWorldPoint, 0.12f);
+            Gizmos.DrawWireSphere(CarryWorldPoint, Ball != null ? Ball.CarriedRadius : 0.12f);
 
             Vector3 origin = PunchOrigin;
             Gizmos.color = new Color(1f, 0.5f, 0.15f, 0.9f);

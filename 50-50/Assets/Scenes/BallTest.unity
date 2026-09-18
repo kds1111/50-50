@@ -5760,7 +5760,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0193e50cbd0074b1fbe9ad3218b557c5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FiftyFifty.Ball.BallController
-  Diameter: 0.7
+  Diameter: 0.9
   Mass: 0.6
   GravityScale: 1
   Bounciness: 0.6

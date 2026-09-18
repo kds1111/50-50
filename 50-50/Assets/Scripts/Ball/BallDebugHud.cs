@@ -83,7 +83,12 @@ namespace FiftyFifty.Ball
                     ? $"CARRYING   {Handler.HoldRemaining:0.0}s left"
                     : Handler.GrabCooldownRemaining > 0f
                         ? $"no ball — grab cooling down {Handler.GrabCooldownRemaining:0.0}s"
-                        : "no ball";
+                        : Handler.CanGrabNow ? "no ball" : "no ball — hold meter too low to grab";
+
+                GUILayout.Label(
+                    $"hold meter {Handler.HoldRemaining:0.0} / {Handler.HoldSeconds:0.0}s" +
+                    (Handler.Carrying || Handler.HoldMeterFull ? "" : "   (refills once the ball is away)"),
+                    _small);
 
                 GUILayout.Label(possession, _small);
                 GUILayout.Label(

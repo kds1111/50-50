@@ -26,8 +26,9 @@ namespace FiftyFifty.Ball
     {
         [Header("Body")]
         [Tooltip("Ball diameter in metres. Roughly waist-high on the rider, and about 1.25x the " +
-                 "length of the board — big enough to read at speed.")]
-        public float Diameter = 0.7f;
+                 "length of the board — big enough to read at speed. The carry point clears " +
+                 "itself as this grows, so it is safe to crank.")]
+        public float Diameter = 0.9f;
 
         [Tooltip("Mass in kg. Light: the board is 10kg, and the ball should move when hit.")]
         public float Mass = 0.6f;
@@ -78,6 +79,9 @@ namespace FiftyFifty.Ball
         public Vector3 Position => _rb != null ? _rb.position : transform.position;
         public Vector3 Velocity => _rb != null ? _rb.linearVelocity : Vector3.zero;
         public float Radius => Diameter * 0.5f;
+
+        /// <summary>Radius while carried, i.e. after the shrink. What a carry point must clear.</summary>
+        public float CarriedRadius => Diameter * CarriedScale * 0.5f;
 
         /// <summary>Who is holding it, or null. Compared by reference, never by tag.</summary>
         public Component Holder { get; private set; }

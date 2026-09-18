@@ -32,6 +32,7 @@ namespace FiftyFifty.EditorTools
                 Drop("DROP (from 3m)", 3f, 400);
                 Roll("ROLL (punched at 14 m/s)", 14f, 500);
                 PunchArc();
+                CarryClearance();
             }
             finally
             {
@@ -183,6 +184,46 @@ namespace FiftyFifty.EditorTools
 
             log.AppendLine("       " + string.Concat(System.Linq.Enumerable.Range(0, 11)
                 .Select(i => $"{(i * 0.5f) - 2.5f,3:0.#}")));
+
+            Debug.Log(log.ToString());
+
+            Object.DestroyImmediate(holder);
+            Object.DestroyImmediate(ball.gameObject);
+        }
+
+        /// <summary>
+        /// How far the carry point sits from the body as the ball grows, and how much daylight
+        /// is left between the ball's surface and the rider. A fixed offset that looked right at
+        /// 0.7 m buries a 1.2 m ball in the rider's chest, which is what this catches.
+        /// </summary>
+        private static void CarryClearance()
+        {
+            BallController ball = CreateBall(Vector3.zero);
+
+            var holder = new GameObject("ProbeHandler");
+            var handler = holder.AddComponent<BallHandler>();
+            handler.Ball = ball;
+            handler.Board = null;
+
+            // Rider capsule in the test scene: 0.26 wide, so 0.13 m of radius to clear.
+            const float riderRadius = 0.13f;
+
+            var log = new StringBuilder();
+            log.AppendLine("=== CARRY CLEARANCE ===");
+            log.AppendLine($"clearance setting {handler.CarryClearance} m, rider radius {riderRadius} m");
+            log.AppendLine("diameter   carried r   offset out   gap to rider");
+
+            foreach (float diameter in new[] { 0.7f, 0.9f, 1.2f, 1.6f })
+            {
+                ball.Diameter = diameter;
+
+                Vector3 offset = handler.EffectiveCarryOffset;
+                float outward = new Vector2(offset.x, offset.z).magnitude;
+                float gap = outward - ball.CarriedRadius - riderRadius;
+
+                log.AppendLine($"{diameter,8:0.00}   {ball.CarriedRadius,9:0.00}   {outward,10:0.00}   " +
+                               $"{gap,12:0.00}{(gap < 0f ? "   CLIPS" : "")}");
+            }
 
             Debug.Log(log.ToString());
 
