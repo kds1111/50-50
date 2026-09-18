@@ -61,10 +61,6 @@ namespace FiftyFifty.CameraRig
 
         public float RecenterSpeed = 2.5f;
 
-        [Header("Flip (right stick click)")]
-        [Tooltip("How quickly the view swings round when the player flips it. Fast enough to feel " +
-                 "like a decision, slow enough to follow with your eyes.")]
-        public float FlipSpeed = 8f;
 
         private float _orbitYaw;
         private float _orbitPitch;
@@ -72,8 +68,6 @@ namespace FiftyFifty.CameraRig
         private Quaternion _heading = Quaternion.identity;
         private float _anchorHeading;
         private bool _wasGrounded = true;
-        private float _flipTarget;
-        private float _flipCurrent;
 
         private void Start()
         {
@@ -126,35 +120,12 @@ namespace FiftyFifty.CameraRig
             }
 
             UpdateHeading(dt);
-            UpdateFlip(dt);
 
-            Quaternion flip = Quaternion.Euler(0f, _flipCurrent, 0f);
             Quaternion orbit = Quaternion.Euler(_orbitPitch, _orbitYaw, 0f);
-            Vector3 wanted = Target.position + (_heading * flip * orbit * Offset);
+            Vector3 wanted = Target.position + (_heading * orbit * Offset);
 
             transform.position = Vector3.Lerp(transform.position, wanted, PositionDamping * dt);
             transform.LookAt(Target.position + (Vector3.up * LookAtHeight));
-        }
-
-        /// <summary>
-        /// A player-owned 180 on the view, on right stick click.
-        ///
-        /// The camera no longer needs this to survive a 180 — since #19 the board snaps its
-        /// heading to the way it is actually travelling on landing, so a spin never drags the
-        /// view round any more. This is the other thing: looking back at where you came from,
-        /// or at a defender behind you, without steering there.
-        /// </summary>
-        private void UpdateFlip(float dt)
-        {
-            var player = InputSource as PlayerBoardInput;
-
-            if (player != null && player.ConsumeCameraFlip())
-            {
-                _flipTarget = Mathf.Approximately(_flipTarget, 0f) ? 180f : 0f;
-            }
-
-            _flipCurrent = Mathf.MoveTowardsAngle(
-                _flipCurrent, _flipTarget, FlipSpeed * 60f * dt);
         }
 
         /// <summary>
@@ -162,10 +133,13 @@ namespace FiftyFifty.CameraRig
         /// had at takeoff, following the spin only as far as AirHeadingFollow allows, so a 180
         /// reads as the board turning rather than the world turning.
         ///
-        /// On landing the board's heading is authoritative again — and since #19 that heading
-        /// has already been snapped to the direction of travel, so landing a 180 no longer
-        /// swings the view a half-turn. That flip was the board reversing, not the camera
-        /// misbehaving.
+        /// Landing no longer swings the view, because since #19 an air spin does not move the
+        /// heading at all — the board and rider turn, the direction being driven does not. The
+        /// camera follows the drive direction, so after a landed 180 it sits exactly where it
+        /// was, looking at the front of a rider who is now riding backwards.
+        ///
+        /// The only thing that turns the view is the flip button, and that turns the drive
+        /// direction with it.
         /// </summary>
         private void UpdateHeading(float dt)
         {

@@ -165,20 +165,6 @@ namespace FiftyFifty.Board.Tricks
             // approximate, since it treats any spin as a trick.
             _board ??= GetComponent<BoardController>();
             _board.NamedTrickTag = () => InNamedTrick;
-            _board.HeadingFlippedOnLanding += OnHeadingFlipped;
-        }
-
-        /// <summary>
-        /// A landing snapped the heading around (#19). The simulation now points the other way
-        /// and nothing downstream will ever know — but the player just did a 180, and the board
-        /// should look like it. The mesh takes the 180 the simulation gave up.
-        ///
-        /// Same treatment a shuvit gets: the board rides backwards from here, which is correct,
-        /// because with no switch stance either end leads equally well.
-        /// </summary>
-        private void OnHeadingFlipped()
-        {
-            _restRotation = _restRotation * Quaternion.Euler(0f, 180f, 0f);
         }
 
         private void OnDisable()
@@ -190,7 +176,6 @@ namespace FiftyFifty.Board.Tricks
             }
 
             _board.NamedTrickTag = null;
-            _board.HeadingFlippedOnLanding -= OnHeadingFlipped;
             _board.TrickVisualRotation = Quaternion.identity;
             ReleaseKnockdownHolds();
             _knockedDown = false;

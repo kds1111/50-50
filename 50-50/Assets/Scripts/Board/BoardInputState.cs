@@ -49,6 +49,15 @@ namespace FiftyFifty.Board
         /// </summary>
         public int TrickSlot;
 
+        /// <summary>
+        /// True on the tick the player asks to reverse the direction they drive.
+        ///
+        /// This one IS simulation, unlike the camera stick below it: it moves the heading, so it
+        /// has to replay identically. With an air spin no longer touching the heading (#19), it
+        /// is the player's only deliberate control over which way is forward.
+        /// </summary>
+        public bool HeadingFlipPressed;
+
         /// <summary>Camera orbit, right stick. Presentation only, not simulation state.</summary>
         public Vector2 CameraLook;
     }

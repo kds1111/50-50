@@ -117,17 +117,16 @@ namespace FiftyFifty.Board
                  "stays true whichever way you are rolling.")]
         public bool InvertSteerInReverse = false;
 
-        [Header("Fakie-agnostic landing (#19)")]
-        [Tooltip("On landing more than 90 degrees from the way you are actually travelling, snap " +
-                 "the heading around to match. This is what makes a landed 180 free: there is no " +
-                 "switch stance, so the board silently adopts whichever end is leading and " +
-                 "everything downstream — drive, steering, the camera — carries on as before.\n\n" +
-                 "Off restores the pre-#19 behaviour, where a 180 genuinely reverses you.")]
-        public bool FakieAgnosticLanding = true;
-
-        [Tooltip("Below this speed a landing has no meaningful direction of travel to match, so " +
-                 "the heading is left alone rather than snapped to noise.")]
-        public float FakieSnapMinSpeed = 1.5f;
+        [Header("Heading (#19)")]
+        [Tooltip("An air spin turns the board and rider. It does NOT turn the direction you " +
+                 "drive.\n\n" +
+                 "These are two separate things and neither drags the other. Land a 180 and you " +
+                 "are facing backwards, still travelling the same way, with every control meaning " +
+                 "exactly what it meant before — and nothing snaps back on landing, because " +
+                 "nothing about your driving ever moved. The rotation is still accumulated, " +
+                 "classified and scored; it is simply not a change of direction.\n\n" +
+                 "Off restores the old behaviour, where spinning steers you.")]
+        public bool AirSpinIsCosmetic = true;
 
         [Header("Traction — landing slide (#18)")]
         [Tooltip("Land crooked and the board keeps its heading while momentum carries on the old " +
@@ -254,6 +253,11 @@ namespace FiftyFifty.Board
         [Tooltip("Deck mesh, leaned into turns. VISUAL ONLY — never affects physics or heading.")]
         public Transform DeckVisual;
 
+        [Tooltip("Rider mesh. Turns with a spin but NOT with a shuvit — a shuvit spins the board " +
+                 "under a stationary rider and a 180 turns both, which is the only thing that " +
+                 "tells them apart. VISUAL ONLY.")]
+        public Transform RiderVisual;
+
         [Tooltip("How far the deck tips into a full-lock turn, in degrees.")]
         public float LeanAngle = 14f;
 
@@ -267,6 +271,15 @@ namespace FiftyFifty.Board
         [SerializeField] private float _heading;
         [SerializeField] private float _timeInAir;
         [SerializeField] private float _airYawTurns;
+
+        /// <summary>
+        /// How far the board and rider are turned relative to the direction being driven.
+        ///
+        /// A spin adds to this and leaves the heading alone. The flip button does the exact
+        /// opposite — it turns the heading and subtracts the same amount here — so the drive
+        /// direction reverses while nothing on screen visibly moves.
+        /// </summary>
+        [SerializeField] private float _visualYaw;
         [SerializeField] private bool _powersliding;
         [SerializeField] private float _grip;
         [SerializeField] private bool _disturbed;
@@ -314,13 +327,6 @@ namespace FiftyFifty.Board
         /// </summary>
         [System.NonSerialized] public Quaternion TrickVisualRotation = Quaternion.identity;
 
-        /// <summary>
-        /// Raised when a landing snapped the heading around (#19). The simulation now points the
-        /// other way, but the BOARD should still look like it just landed backwards — same
-        /// treatment a shuvit gets on #6. BoardTrickController listens and turns the mesh; a
-        /// scene without one simply does not show it.
-        /// </summary>
-        public event System.Action HeadingFlippedOnLanding;
 
         /// <summary>Grip is below normal: either a crooked landing or a held powerslide.</summary>
         public bool Sliding => _grip < SidewaysGrip - 0.001f;
@@ -419,6 +425,11 @@ namespace FiftyFifty.Board
                 DeckVisual = transform.Find("BoardMesh") ?? transform.Find("Deck");
             }
 
+            if (RiderVisual == null)
+            {
+                RiderVisual = transform.Find("Rider");
+            }
+
             _spawnPosition = transform.position;
             _grip = SidewaysGrip;
             _spawnHeading = transform.eulerAngles.y;
@@ -474,6 +485,7 @@ namespace FiftyFifty.Board
             }
 
             ApplyOllie();
+            ApplyHeadingFlip();
             UpdateDisturbance(dt);
             ApplyOrientation(dt);
 
@@ -619,11 +631,54 @@ namespace FiftyFifty.Board
         }
 
         /// <summary>In the air the heading keeps turning, which is all a 180 is.</summary>
+        /// <summary>
+        /// Spin the board in the air. Board and rider turn together; the heading does not move.
+        ///
+        /// Landing therefore has nothing to put back: the orientation earned in the air is kept,
+        /// and the player carries on driving exactly as before. That is #19's verdict, and the
+        /// reason there is no snap.
+        /// </summary>
         private void SpinInAir(float dt)
         {
             float delta = _input.Attitude.x * AirYawRate * dt;
-            _heading += delta;
+
+            if (AirSpinIsCosmetic)
+            {
+                _visualYaw += delta;
+            }
+            else
+            {
+                _heading += delta;
+            }
+
             _airYawTurns += delta / 360f;
+        }
+
+        /// <summary>
+        /// Turn the direction you drive around, without turning the board.
+        ///
+        /// The heading gains a half turn and the visual offset loses one, so they cancel exactly:
+        /// nothing on screen rotates, but the throttle, the steering and the camera all now mean
+        /// the other way. The board carries on pointing wherever the last trick left it, which is
+        /// correct — with no switch stance either end leads equally well.
+        ///
+        /// Ground only. In the air it would silently change where a player lands up driving with
+        /// nothing visible happening, which reads as broken rather than powerful.
+        ///
+        /// Instant, and grip does not fight it: grip scrubs velocity perpendicular to the board,
+        /// and a half turn has no perpendicular component, so momentum is kept and the throttle
+        /// simply starts working against it. The drive code already copes with a negative forward
+        /// speed without a special case.
+        /// </summary>
+        private void ApplyHeadingFlip()
+        {
+            if (!_input.HeadingFlipPressed || !_grounded)
+            {
+                return;
+            }
+
+            _heading += 180f;
+            _visualYaw -= 180f;
         }
 
         /// <summary>
@@ -790,42 +845,6 @@ namespace FiftyFifty.Board
         /// it loses on touchdown. Landing backwards is simply the far end of the same scale — for
         /// now. Whether it should instead leave the rider switch is #19.
         /// </summary>
-        /// <summary>
-        /// There is no switch stance (#19), so the board takes whichever end is leading.
-        ///
-        /// Done here, once, at touchdown, rather than by teaching drive, steering and the camera
-        /// each to cope with a reversed heading: one rule in one place means nothing downstream
-        /// ever learns that fakie could exist. A 180 therefore costs nothing — same direction of
-        /// travel, same momentum, same handling — which is exactly what the ticket resolved.
-        ///
-        /// Runs BEFORE the landing slide, so the slip angle that decides whether you slide is
-        /// measured against the heading you are actually keeping.
-        /// </summary>
-        private void SnapHeadingToTravel()
-        {
-            if (!FakieAgnosticLanding)
-            {
-                return;
-            }
-
-            Vector3 flat = Vector3.ProjectOnPlane(_rb.linearVelocity, Vector3.up);
-
-            if (flat.magnitude < FakieSnapMinSpeed)
-            {
-                return;
-            }
-
-            Vector3 headingForward = Quaternion.Euler(0f, _heading, 0f) * Vector3.forward;
-
-            if (Vector3.Dot(headingForward, flat.normalized) >= 0f)
-            {
-                return;
-            }
-
-            _heading = Mathf.Repeat(_heading + 180f, 360f);
-            HeadingFlippedOnLanding?.Invoke();
-        }
-
         private void BeginLandingSlide()
         {
             if (!LandingSlideEnabled)
@@ -917,7 +936,6 @@ namespace FiftyFifty.Board
             _timeInAir = 0f;
             _airYawTurns = 0f;
 
-            SnapHeadingToTravel();
             BeginLandingSlide();
 
             // Deliberately does NOT cancel the board's fall. It used to, and the spring then
@@ -936,7 +954,18 @@ namespace FiftyFifty.Board
 
             float wanted = _grounded ? -_input.Steer * LeanAngle : 0f;
             _visualLean = Mathf.Lerp(_visualLean, wanted, Mathf.Clamp01(LeanSpeed * Time.deltaTime));
-            DeckVisual.localRotation = TrickVisualRotation * Quaternion.Euler(0f, 0f, _visualLean);
+
+            // A spin turns the whole assembly. A trick turns only the board, under a rider who
+            // stays put — which is the entire difference between a 180 and a shuvit.
+            Quaternion spin = Quaternion.Euler(0f, _visualYaw, 0f);
+
+            DeckVisual.localRotation =
+                spin * TrickVisualRotation * Quaternion.Euler(0f, 0f, _visualLean);
+
+            if (RiderVisual != null)
+            {
+                RiderVisual.localRotation = spin;
+            }
         }
 
         /// <summary>
@@ -970,6 +999,7 @@ namespace FiftyFifty.Board
             _powersliding = false;
             _grip = SidewaysGrip;
             _airYawTurns = 0f;
+            _visualYaw = 0f;
             _wobbleAmplitude = 0f;
             _wobbleOffset = 0f;
             _disturbedTimer = 0f;

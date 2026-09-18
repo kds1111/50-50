@@ -63,13 +63,14 @@ namespace FiftyFifty.Board
         [Tooltip("Keyboard equivalent of the powerslide button.")]
         public Key PowerslideKey = Key.LeftShift;
 
-        [Tooltip("Flips the camera to look the other way. Right stick click by default.\n\n" +
-                 "Presentation only — it never reaches the simulation, the same way the camera " +
-                 "stick never does.")]
-        public GamepadButton CameraFlipButton = GamepadButton.RightStick;
+        [Tooltip("Reverses the direction you drive. Right stick click by default.\n\n" +
+                 "Simulation input, not a camera control: it moves the heading, and the camera " +
+                 "follows the heading, so the view comes with it for free. The board itself does " +
+                 "not rotate. Ground only.")]
+        public GamepadButton HeadingFlipButton = GamepadButton.RightStick;
 
-        [Tooltip("Keyboard equivalent of the camera flip.")]
-        public Key CameraFlipKey = Key.C;
+        [Tooltip("Keyboard equivalent of the heading flip.")]
+        public Key HeadingFlipKey = Key.C;
 
         [Header("Tricks (#6 — bindings still open)")]
         [Tooltip("Held (or just pressed) alongside a trick button. Defaults to A, the ollie.\n\n" +
@@ -110,7 +111,7 @@ namespace FiftyFifty.Board
         private int _trickSlotLatched;
         private float _modifierHeldUntil;
         private bool _grabToggled;
-        private bool _cameraFlipLatched;
+        private bool _headingFlipLatched;
 
         private void Update()
         {
@@ -147,10 +148,10 @@ namespace FiftyFifty.Board
                 _grabToggled = !_grabToggled;
             }
 
-            if ((pad != null && pad[CameraFlipButton].wasPressedThisFrame)
-                || (keys != null && keys[CameraFlipKey].wasPressedThisFrame))
+            if ((pad != null && pad[HeadingFlipButton].wasPressedThisFrame)
+                || (keys != null && keys[HeadingFlipKey].wasPressedThisFrame))
             {
-                _cameraFlipLatched = true;
+                _headingFlipLatched = true;
             }
 
             _debugPopLatched = _popLatched;
@@ -262,12 +263,14 @@ namespace FiftyFifty.Board
                 PunchPressed = _punchLatched,
                 PowerslideHeld = powerslideHeld,
                 TrickSlot = _trickSlotLatched,
+                HeadingFlipPressed = _headingFlipLatched,
                 CameraLook = right,
             };
 
             _popLatched = false;
             _punchLatched = false;
             _trickSlotLatched = 0;
+            _headingFlipLatched = false;
 
             return state;
         }
@@ -284,18 +287,6 @@ namespace FiftyFifty.Board
         public void ClearGrabToggle()
         {
             _grabToggled = false;
-        }
-
-        /// <summary>
-        /// One-shot camera flip request, consumed by the camera. Deliberately NOT part of
-        /// BoardInputState: which way the player is looking changes nothing about the
-        /// simulation, and putting it in the input struct would mean reconciling a view.
-        /// </summary>
-        public bool ConsumeCameraFlip()
-        {
-            bool flip = _cameraFlipLatched;
-            _cameraFlipLatched = false;
-            return flip;
         }
 
         /// <summary>
