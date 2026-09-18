@@ -236,6 +236,8 @@ namespace FiftyFifty.Ball
             _grabCooldownRemaining = Mathf.Max(0f, _grabCooldownRemaining - dt);
             _punchCooldownRemaining = Mathf.Max(0f, _punchCooldownRemaining - dt);
 
+            SyncGrabToggle();
+
             if (Ball == null)
             {
                 return;
@@ -465,6 +467,29 @@ namespace FiftyFifty.Ball
 
         private Vector3 PunchOrigin =>
             BodyPosition + (BodyRotation * new Vector3(0f, CarryOffset.y, 0f));
+
+        /// <summary>
+        /// Losing the ball for any reason the player did not choose — the hold limit fumbling it,
+        /// being stripped, bailing while carrying — has to switch the grab toggle back off.
+        ///
+        /// A held button cannot go out of sync with the world; a toggle can. Without this the
+        /// toggle still reads "carrying" while your hands are empty, so the next tap would clear
+        /// an invisible state instead of grabbing, and feel like a dropped input.
+        /// </summary>
+        private void SyncGrabToggle()
+        {
+            if (_wasCarrying && !_carrying && Board != null)
+            {
+                if (Board.InputSource is FiftyFifty.Board.PlayerBoardInput player)
+                {
+                    player.ClearGrabToggle();
+                }
+            }
+
+            _wasCarrying = _carrying;
+        }
+
+        private bool _wasCarrying;
 
         /// <summary>
         /// A bail while carrying fumbles the ball. #7 filed this rule on #6 because bail did not

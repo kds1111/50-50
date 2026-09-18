@@ -117,6 +117,18 @@ namespace FiftyFifty.Board
                  "stays true whichever way you are rolling.")]
         public bool InvertSteerInReverse = false;
 
+        [Header("Fakie-agnostic landing (#19)")]
+        [Tooltip("On landing more than 90 degrees from the way you are actually travelling, snap " +
+                 "the heading around to match. This is what makes a landed 180 free: there is no " +
+                 "switch stance, so the board silently adopts whichever end is leading and " +
+                 "everything downstream — drive, steering, the camera — carries on as before.\n\n" +
+                 "Off restores the pre-#19 behaviour, where a 180 genuinely reverses you.")]
+        public bool FakieAgnosticLanding = true;
+
+        [Tooltip("Below this speed a landing has no meaningful direction of travel to match, so " +
+                 "the heading is left alone rather than snapped to noise.")]
+        public float FakieSnapMinSpeed = 1.5f;
+
         [Header("Traction — landing slide (#18)")]
         [Tooltip("Land crooked and the board keeps its heading while momentum carries on the old " +
                  "line, grip returning over the next moment. Off restores the on-rails board.")]
@@ -301,6 +313,14 @@ namespace FiftyFifty.Board
         /// detection and grip never see an upside-down board.
         /// </summary>
         [System.NonSerialized] public Quaternion TrickVisualRotation = Quaternion.identity;
+
+        /// <summary>
+        /// Raised when a landing snapped the heading around (#19). The simulation now points the
+        /// other way, but the BOARD should still look like it just landed backwards — same
+        /// treatment a shuvit gets on #6. BoardTrickController listens and turns the mesh; a
+        /// scene without one simply does not show it.
+        /// </summary>
+        public event System.Action HeadingFlippedOnLanding;
 
         /// <summary>Grip is below normal: either a crooked landing or a held powerslide.</summary>
         public bool Sliding => _grip < SidewaysGrip - 0.001f;
@@ -770,6 +790,42 @@ namespace FiftyFifty.Board
         /// it loses on touchdown. Landing backwards is simply the far end of the same scale — for
         /// now. Whether it should instead leave the rider switch is #19.
         /// </summary>
+        /// <summary>
+        /// There is no switch stance (#19), so the board takes whichever end is leading.
+        ///
+        /// Done here, once, at touchdown, rather than by teaching drive, steering and the camera
+        /// each to cope with a reversed heading: one rule in one place means nothing downstream
+        /// ever learns that fakie could exist. A 180 therefore costs nothing — same direction of
+        /// travel, same momentum, same handling — which is exactly what the ticket resolved.
+        ///
+        /// Runs BEFORE the landing slide, so the slip angle that decides whether you slide is
+        /// measured against the heading you are actually keeping.
+        /// </summary>
+        private void SnapHeadingToTravel()
+        {
+            if (!FakieAgnosticLanding)
+            {
+                return;
+            }
+
+            Vector3 flat = Vector3.ProjectOnPlane(_rb.linearVelocity, Vector3.up);
+
+            if (flat.magnitude < FakieSnapMinSpeed)
+            {
+                return;
+            }
+
+            Vector3 headingForward = Quaternion.Euler(0f, _heading, 0f) * Vector3.forward;
+
+            if (Vector3.Dot(headingForward, flat.normalized) >= 0f)
+            {
+                return;
+            }
+
+            _heading = Mathf.Repeat(_heading + 180f, 360f);
+            HeadingFlippedOnLanding?.Invoke();
+        }
+
         private void BeginLandingSlide()
         {
             if (!LandingSlideEnabled)
@@ -861,6 +917,7 @@ namespace FiftyFifty.Board
             _timeInAir = 0f;
             _airYawTurns = 0f;
 
+            SnapHeadingToTravel();
             BeginLandingSlide();
 
             // Deliberately does NOT cancel the board's fall. It used to, and the spring then

@@ -85,6 +85,7 @@ namespace FiftyFifty.Board
                 "keys: A,D steer / air spin   W accelerate   S brake   arrows camera   SPACE ollie\n" +
                 "L3 / SHIFT powerslide   (brake held at rest reverses)\n" +
                 "tricks: hold A (SPACE) + B/X/Y  —  keys J / K / L\n" +
+                "RB / E grab (tap on, tap off)   LB / F punch   R3 / C flip camera\n" +
                 "R respawn",
                 _small);
 

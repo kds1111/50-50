@@ -35,8 +35,16 @@ namespace FiftyFifty.Board
         public bool InvertAttitudePitch = false;
 
         [Header("Bindings — ball")]
-        [Tooltip("Gamepad button held to carry the ball.")]
+        [Tooltip("Gamepad button that carries the ball. Tap to grab, tap again to let go — see " +
+                 "GrabIsToggle.")]
         public GamepadButton GrabButton = GamepadButton.RightShoulder;
+
+        [Tooltip("Tap to grab and tap again to release, rather than holding the button down the " +
+                 "whole time you are carrying.\n\n" +
+                 "The simulation never learns the difference: GrabHeld still means 'wants to be " +
+                 "carrying', so the hold limit, the fumble and the grab cooldown are untouched " +
+                 "(#7). Off restores the held grab.")]
+        public bool GrabIsToggle = true;
 
         [Tooltip("Gamepad button that punches. Punch is the shot.")]
         public GamepadButton PunchButton = GamepadButton.LeftShoulder;
@@ -54,6 +62,14 @@ namespace FiftyFifty.Board
 
         [Tooltip("Keyboard equivalent of the powerslide button.")]
         public Key PowerslideKey = Key.LeftShift;
+
+        [Tooltip("Flips the camera to look the other way. Right stick click by default.\n\n" +
+                 "Presentation only — it never reaches the simulation, the same way the camera " +
+                 "stick never does.")]
+        public GamepadButton CameraFlipButton = GamepadButton.RightStick;
+
+        [Tooltip("Keyboard equivalent of the camera flip.")]
+        public Key CameraFlipKey = Key.C;
 
         [Header("Tricks (#6 — bindings still open)")]
         [Tooltip("Held (or just pressed) alongside a trick button. Defaults to A, the ollie.\n\n" +
@@ -93,6 +109,8 @@ namespace FiftyFifty.Board
         private bool _punchLatched;
         private int _trickSlotLatched;
         private float _modifierHeldUntil;
+        private bool _grabToggled;
+        private bool _cameraFlipLatched;
 
         private void Update()
         {
@@ -120,6 +138,20 @@ namespace FiftyFifty.Board
             }
 
             PollTrickChord(pad, keys);
+
+            bool grabDown = (pad != null && pad[GrabButton].wasPressedThisFrame)
+                            || (keys != null && keys[GrabKey].wasPressedThisFrame);
+
+            if (grabDown)
+            {
+                _grabToggled = !_grabToggled;
+            }
+
+            if ((pad != null && pad[CameraFlipButton].wasPressedThisFrame)
+                || (keys != null && keys[CameraFlipKey].wasPressedThisFrame))
+            {
+                _cameraFlipLatched = true;
+            }
 
             _debugPopLatched = _popLatched;
         }
@@ -206,8 +238,10 @@ namespace FiftyFifty.Board
                 if (keys.sKey.isPressed) brake = 1f;
             }
 
-            bool grabHeld = (pad != null && pad[GrabButton].isPressed)
-                            || (keys != null && keys[GrabKey].isPressed);
+            bool grabHeld = GrabIsToggle
+                ? _grabToggled
+                : (pad != null && pad[GrabButton].isPressed)
+                  || (keys != null && keys[GrabKey].isPressed);
 
             bool powerslideHeld = (pad != null && pad[PowerslideButton].isPressed)
                                   || (keys != null && keys[PowerslideKey].isPressed);
@@ -236,6 +270,32 @@ namespace FiftyFifty.Board
             _trickSlotLatched = 0;
 
             return state;
+        }
+
+        /// <summary>
+        /// Force the grab toggle off.
+        ///
+        /// Needed because a toggle can go out of sync with reality in a way a held button never
+        /// can: fumble the ball on the hold limit, get stripped, or bail while carrying, and the
+        /// toggle still says "carrying" while your hands are empty. The player would then have
+        /// to tap once to clear a state they can no longer see before they could grab again,
+        /// which reads as a dropped input.
+        /// </summary>
+        public void ClearGrabToggle()
+        {
+            _grabToggled = false;
+        }
+
+        /// <summary>
+        /// One-shot camera flip request, consumed by the camera. Deliberately NOT part of
+        /// BoardInputState: which way the player is looking changes nothing about the
+        /// simulation, and putting it in the input struct would mean reconciling a view.
+        /// </summary>
+        public bool ConsumeCameraFlip()
+        {
+            bool flip = _cameraFlipLatched;
+            _cameraFlipLatched = false;
+            return flip;
         }
 
         /// <summary>
