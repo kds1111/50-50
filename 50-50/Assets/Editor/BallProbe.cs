@@ -22,7 +22,10 @@ namespace FiftyFifty.EditorTools
         [MenuItem("50-50/Probe Ball")]
         public static void Run()
         {
-            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            if (!ProbeScene.Begin(out string sceneToRestore))
+            {
+                return;
+            }
 
             SimulationMode previous = Physics.simulationMode;
             Physics.simulationMode = SimulationMode.Script;
@@ -37,6 +40,7 @@ namespace FiftyFifty.EditorTools
             finally
             {
                 Physics.simulationMode = previous;
+                ProbeScene.End(sceneToRestore);
             }
         }
 

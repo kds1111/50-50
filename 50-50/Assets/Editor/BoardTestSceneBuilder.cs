@@ -24,6 +24,15 @@ namespace FiftyFifty.EditorTools
         [MenuItem("50-50/Rebuild Board Test Scene")]
         public static void Build()
         {
+            // Rebuilding replaces the open scene, so ask before throwing away unsaved work and
+            // clear the selection — the Inspector holds references to objects about to die.
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+            {
+                return;
+            }
+
+            Selection.objects = new Object[0];
+
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             GreyboxParts.CreateLighting();
