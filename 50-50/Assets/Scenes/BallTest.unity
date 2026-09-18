@@ -1420,7 +1420,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FiftyFifty.Ball.BallHandler
   Ball: {fileID: 1678583028}
   Board: {fileID: 454085771}
-  CarryOffset: {x: 0.38, y: 1.05, z: 0.25}
+  CarryOffset: {x: 0, y: 1.05, z: 0.45}
   GrabEnabled: 1
   CarryRadius: 1.6
   MaxClosingSpeed: 9
@@ -2313,7 +2313,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FiftyFifty.Ball.BallHandler
   Ball: {fileID: 1678583028}
   Board: {fileID: 0}
-  CarryOffset: {x: 0.45, y: 0.35, z: 0.3}
+  CarryOffset: {x: 0, y: 0.35, z: 0.5}
   GrabEnabled: 1
   CarryRadius: 2.2
   MaxClosingSpeed: 60

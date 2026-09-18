@@ -138,7 +138,7 @@ namespace FiftyFifty.EditorTools
             handler.PunchEnabled = false;
             handler.CarryRadius = 2.2f;
             handler.MaxClosingSpeed = 60f;      // it is a post: it catches anything
-            handler.CarryOffset = new Vector3(0.45f, 0.35f, 0.3f);
+            handler.CarryOffset = new Vector3(0f, 0.35f, 0.5f);
 
             return handler;
         }

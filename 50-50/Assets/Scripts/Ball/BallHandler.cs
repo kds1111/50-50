@@ -34,10 +34,10 @@ namespace FiftyFifty.Ball
         public BoardController Board;
 
         [Header("Carry point")]
-        [Tooltip("Where the ball sits while carried, in local space. Offset to one side and at " +
-                 "chest height on purpose: a ball held straight ahead sits in the middle of the " +
-                 "screen, in the lane you are about to punch it down.")]
-        public Vector3 CarryOffset = new Vector3(0.38f, 1.05f, 0.25f);
+        [Tooltip("Where the ball sits while carried, in local space. Held out in front at chest " +
+                 "height: the shrink is what makes that readable — a full-size ball there would " +
+                 "sit in the middle of the screen, in the lane you are about to punch it down.")]
+        public Vector3 CarryOffset = new Vector3(0f, 1.05f, 0.45f);
 
         [Tooltip("Hold the ball clear of the body by its own size, so making the ball bigger " +
                  "pushes it further out instead of burying it in the rider.")]
@@ -185,6 +185,7 @@ namespace FiftyFifty.Ball
                 }
 
                 var flat = new Vector3(CarryOffset.x, 0f, CarryOffset.z);
+
 
                 if (flat.sqrMagnitude < 0.0001f)
                 {
