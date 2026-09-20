@@ -75,6 +75,13 @@ namespace FiftyFifty.Ball
         [SerializeField] private bool _carried;
         [SerializeField] private float _speed;
 
+        /// <summary>
+        /// Held still by the match (#29), the way the board is: after the final whistle and
+        /// during a kickoff countdown the ball stops where it is. Without this a ball still
+        /// rolling at 0:00 reaches a goal after the match has ended.
+        /// </summary>
+        [System.NonSerialized] public bool Frozen;
+
         public bool Carried => _carried;
         public Vector3 Position => _rb != null ? _rb.position : transform.position;
         public Vector3 Velocity => _rb != null ? _rb.linearVelocity : Vector3.zero;
@@ -153,6 +160,14 @@ namespace FiftyFifty.Ball
         /// <summary>One simulation step. Public and dt-explicit so the probe can drive it.</summary>
         public void SimulateTick(float dt)
         {
+            if (Frozen)
+            {
+                _rb.linearVelocity = Vector3.zero;
+                _rb.angularVelocity = Vector3.zero;
+                _speed = 0f;
+                return;
+            }
+
             if (_carried)
             {
                 // Parked, not simulated. MovePosition rather than transform so interpolation

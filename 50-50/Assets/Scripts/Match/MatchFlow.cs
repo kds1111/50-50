@@ -64,6 +64,13 @@ namespace FiftyFifty.Match
         /// <summary>Players are held still: counting down, or the match is over.</summary>
         public bool Frozen => Phase == MatchPhase.Countdown || Phase == MatchPhase.Over;
 
+        /// <summary>
+        /// Whether a goal counts right now (#29). Only in play: not during the opening countdown,
+        /// not in the pause after a goal, not after full time. The goal volume asks before it
+        /// settles any bank, so a ball still rolling when the clock runs out cements nothing.
+        /// </summary>
+        public bool ScoringOpen => Phase == MatchPhase.Playing;
+
         /// <summary>A fresh match: the clock refills, everyone goes to their spots, the countdown starts.</summary>
         public MatchSignal Begin()
         {

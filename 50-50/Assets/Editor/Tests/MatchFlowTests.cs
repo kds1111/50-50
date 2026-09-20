@@ -25,6 +25,37 @@ namespace FiftyFifty.Tests
             return all;
         }
 
+        // --- Scoring gate (#29) ----------------------------------------------------------
+
+        /// <summary>
+        /// A goal only counts while the match is being played. Walks a whole match: the opening
+        /// countdown, play, the pause after a goal, the kickoff that follows it, and full time.
+        /// </summary>
+        [Test]
+        public void Scoring_is_open_only_while_playing()
+        {
+            var flow = new MatchFlow { CountdownSeconds = 2f, GoalPauseSeconds = 1.5f, TimerEnabled = true, MatchSeconds = 10f };
+
+            flow.Begin();
+            Assert.IsFalse(flow.ScoringOpen, "the opening countdown is not play");
+
+            Run(flow, 2.1f);
+            Assert.IsTrue(flow.ScoringOpen, "play has started");
+
+            flow.Goal();
+            Assert.IsFalse(flow.ScoringOpen, "the pause after a goal is not play");
+
+            Run(flow, 1.6f);
+            Assert.IsFalse(flow.ScoringOpen, "the kickoff countdown is not play either");
+
+            Run(flow, 2.1f);
+            Assert.IsTrue(flow.ScoringOpen, "play has resumed");
+
+            Run(flow, 11f);
+            Assert.AreEqual(MatchPhase.Over, flow.Phase);
+            Assert.IsFalse(flow.ScoringOpen, "the match is over");
+        }
+
         // --- Kickoff ---------------------------------------------------------------------
 
         [Test]

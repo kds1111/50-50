@@ -104,10 +104,17 @@ namespace FiftyFifty.Match
         private float _playerOneStartYaw;
         private bool _restartRequested;
         private float _goShownUntil = -1f;
+        private string _result;
         private GUIStyle _huge;
         private GUIStyle _mid;
 
         public MatchPhase Phase => _flow.Phase;
+
+        /// <summary>
+        /// Whether a goal counts right now (#29). With kickoffs switched off there are no phases
+        /// worth speaking of, so scoring is always open and the scene behaves as it did before.
+        /// </summary>
+        public bool ScoringOpen => !KickoffEnabled || _flow.ScoringOpen;
 
         private void OnEnable() => GoalTargetVolume.Scored += OnGoal;
 
@@ -196,6 +203,7 @@ namespace FiftyFifty.Match
                 }
 
                 _flow.MatchSeconds = Mathf.Max(0f, MatchMinutes) * 60f;
+                _result = null;
                 Handle(_flow.Begin());
             }
 
@@ -204,6 +212,13 @@ namespace FiftyFifty.Match
             foreach (Player p in _players)
             {
                 p.Board.Frozen = _flow.Frozen;
+            }
+
+            // #29: the ball is held for the same reasons the boards are. Without this it rolls
+            // on through the final whistle and reaches a goal after the match has ended.
+            if (_ball != null)
+            {
+                _ball.Frozen = _flow.Frozen;
             }
 
             _phase = _flow.Phase;
@@ -240,7 +255,10 @@ namespace FiftyFifty.Match
 
             if ((signal & MatchSignal.Ended) != 0)
             {
-                Debug.Log($"[50-50] Full time. {ResultLine()}");
+                // Settled here, not in OnGUI: recomputing it every GUI pass let the winner
+                // change after full time, which is #29's third symptom.
+                _result = ResultLine();
+                Debug.Log($"[50-50] Full time. {_result}");
             }
         }
 
@@ -544,7 +562,7 @@ namespace FiftyFifty.Match
             if (_flow.Phase == MatchPhase.Over)
             {
                 var whole = new Rect(0f, 0f, Screen.width, Screen.height);
-                GUI.Label(new Rect(whole.x, whole.center.y - 70f, whole.width, 80f), ResultLine(), _huge);
+                GUI.Label(new Rect(whole.x, whole.center.y - 70f, whole.width, 80f), _result ?? ResultLine(), _huge);
                 GUI.Label(new Rect(whole.x, whole.center.y + 20f, whole.width, 40f),
                     "Enter / Start — play again", _mid);
             }

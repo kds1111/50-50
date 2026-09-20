@@ -1,3 +1,4 @@
+using FiftyFifty.Match;
 using FiftyFifty.Scoring;
 using UnityEngine;
 
@@ -51,6 +52,7 @@ namespace FiftyFifty.Ball
         public float LastEntrySpeed => _lastEntrySpeed;
         public float SecondsSinceEntry => Time.time - _lastEntryTime;
 
+        private MatchDirector _director;
         private float _lastEntryTime = -999f;
         private BallController _pending;
         private float _returnAt;
@@ -58,6 +60,18 @@ namespace FiftyFifty.Ball
         private void Reset()
         {
             GetComponent<BoxCollider>().isTrigger = true;
+        }
+
+        /// <summary>
+        /// Whether the match is in a phase where a goal counts (#29). No director, or one that
+        /// is switched off, means there is no match to be outside of — so scoring stands.
+        /// </summary>
+        private bool MatchAllowsScoring =>
+            _director == null || !_director.isActiveAndEnabled || _director.ScoringOpen;
+
+        private void Start()
+        {
+            _director = FindFirstObjectByType<MatchDirector>();
         }
 
         private void OnTriggerEnter(Collider other)
@@ -75,7 +89,10 @@ namespace FiftyFifty.Ball
 
             Debug.Log($"[50-50] Goal #{_entries} in side {DefendedBy}'s net at {_lastEntrySpeed:0.0} m/s");
 
-            if (ScoringEnabled)
+            // #29: a goal only counts while the match is being played. The director owns the
+            // phase; with no director in the scene there is no match to be outside of, so it
+            // settles as it always did.
+            if (ScoringEnabled && MatchAllowsScoring)
             {
                 Settle();
             }
