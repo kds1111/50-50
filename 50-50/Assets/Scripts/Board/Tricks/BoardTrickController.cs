@@ -95,9 +95,43 @@ namespace FiftyFifty.Board.Tricks
                  "this — it is a knockdown, not a wall.")]
         public float KnockdownSeconds = 1.1f;
 
-        [Tooltip("Respawn at the nearest SafePoint after the knockdown. With none in the scene " +
-                 "this falls back to the board's own spawn.")]
+        [Tooltip("Respawn after the knockdown. Off leaves you where the slide stopped.")]
         public bool RespawnAfterKnockdown = true;
+
+        [Header("Bail respawn (#25)")]
+        [Tooltip("Rings searched outward from the point where you lost it, in metres. The fall " +
+                 "point itself is always tried first. Past the last ring the nearest SafePoint " +
+                 "is used instead.")]
+        public float[] SearchRadii = { 1f, 2f, 4f, 6f };
+
+        [Tooltip("Spots sampled on each ring, in the same order as the radii above.")]
+        public int[] SamplesPerRing = { 4, 6, 8, 10 };
+
+        [Tooltip("Steepest ground, in degrees, a respawn will stand you on.")]
+        public float MaxGroundSlope = 30f;
+
+        [Tooltip("The space a board needs to be put back without overlapping anything solid. " +
+                 "The ball is ignored — a respawning board just shoves it.")]
+        public Vector3 Clearance = new(0.7f, 0.5f, 1.4f);
+
+        [Tooltip("How far above a candidate spot the ground probe starts.")]
+        public float ProbeHeight = 1.5f;
+
+        [Tooltip("How far below a candidate the probe looks for ground. Nothing within this is " +
+                 "read as out of bounds, which goes straight to a SafePoint.")]
+        public float MaxDrop = 50f;
+
+        [Tooltip("Below this speed, m/s, the direction you were travelling is noise, so the " +
+                 "board's own heading is used for which way you face coming back.")]
+        public float TravelSpeedFloor = 2f;
+
+        [Header("Bail flash (#25)")]
+        [Tooltip("Flash the greybox while you are down. Stands in for the fall animation, and " +
+                 "marks #6's invulnerable window: flashing means down and untouchable.")]
+        public bool FlashWhileDown = true;
+
+        [Tooltip("Flashes per second while down.")]
+        public float FlashesPerSecond = 10f;
 
         [Header("Visual")]
         [Tooltip("Degrees per second the cosmetic mesh straightens up after a bail.")]
@@ -117,6 +151,12 @@ namespace FiftyFifty.Board.Tricks
         private float _knockdownTimer;
         private bool _wasGrounded = true;
         private readonly TrickInputBuffer _buffer = new();
+
+        // Captured when the bail fires, not when the knockdown ends: a bail leaves you where you
+        // LOST it, and the board slides on for the whole knockdown (#25).
+        private Vector3 _fallPoint;
+        private float _fallFacing;
+        private Renderer[] _renderers;
 
         /// <summary>The trick currently turning, or null. Drives the ball's disturbance tag.</summary>
         public TrickDefinition RunningTrick => _run.InTrick ? _run.Trick : null;
@@ -150,6 +190,7 @@ namespace FiftyFifty.Board.Tricks
         private void Awake()
         {
             _board = GetComponent<BoardController>();
+            _renderers = GetComponentsInChildren<Renderer>(true);
             RebuildDefinitions();
         }
 
@@ -381,6 +422,10 @@ namespace FiftyFifty.Board.Tricks
                 ReleaseKnockdownHolds();
             }
 
+            // A kickoff can land mid-flash, and a board left invisible is worse than any bug the
+            // flash was meant to show.
+            SetVisible(true);
+
             _run.Reset();
             _buffer.Clear();
             _restRotation = Quaternion.identity;
@@ -401,6 +446,19 @@ namespace FiftyFifty.Board.Tricks
             _board.OllieBlocked = true;
             _board.TrickCreditBlocked = true;
 
+            // Where you lost it, and which way you were going when you did. Read from the body
+            // rather than the transform — this runs inside the physics step (#26).
+            Vector3 travel = _board.Body.linearVelocity;
+            travel.y = 0f;
+
+            float travelHeading = travel.sqrMagnitude > 0.0001f
+                ? Mathf.Atan2(travel.x, travel.z) * Mathf.Rad2Deg
+                : _board.Heading;
+
+            _fallPoint = _board.Body.position;
+            _fallFacing = RespawnPlacement.Facing(
+                travel.magnitude, travelHeading, _board.Heading, TravelSpeedFloor);
+
             Bailed?.Invoke();
         }
 
@@ -413,6 +471,13 @@ namespace FiftyFifty.Board.Tricks
             _board.OllieBlocked = true;
 
             _knockdownTimer -= dt;
+
+            // Driven by the knockdown's own countdown, so the flash marks exactly the window you
+            // are down and untouchable for — and never reads the wall clock (#26).
+            if (FlashWhileDown)
+            {
+                SetVisible(Mathf.Repeat(_knockdownTimer * FlashesPerSecond, 1f) < 0.5f);
+            }
 
             if (_knockdownTimer <= 0f)
             {
@@ -427,13 +492,36 @@ namespace FiftyFifty.Board.Tricks
             _run.Reset();
             _buffer.Clear();
             _restRotation = Quaternion.identity;
+            SetVisible(true);
 
             if (!respawn)
             {
                 return;
             }
 
-            SafePoint point = SafePoint.Nearest(_board.Body.position);
+            // Asked now rather than when the bail fired: the world moved for a whole knockdown,
+            // and testing early is how you respawn into a board that arrived while you were down.
+            var settings = new RespawnSpotFinder.Settings
+            {
+                Radii = SearchRadii,
+                SamplesPerRing = SamplesPerRing,
+                MaxGroundSlope = MaxGroundSlope,
+                Clearance = Clearance,
+                ProbeHeight = ProbeHeight,
+                MaxDrop = MaxDrop,
+            };
+
+            if (RespawnSpotFinder.TryFind(
+                    gameObject.scene.GetPhysicsScene(), _fallPoint, _fallFacing, settings, transform,
+                    out Vector3 spot))
+            {
+                _board.RespawnAt(spot, _fallFacing);
+                return;
+            }
+
+            // Nothing clear nearby, or the fall point was somewhere no search should start from:
+            // out of bounds, or inside a goal.
+            SafePoint point = SafePoint.Nearest(_fallPoint);
 
             if (point != null)
             {
@@ -441,9 +529,26 @@ namespace FiftyFifty.Board.Tricks
             }
             else
             {
-                // No safe points in the scene. #9 owes them; until then this is the old
-                // behaviour rather than a hard failure.
+                // No safe points in the scene at all. Falls back to the board's own spawn rather
+                // than failing hard.
                 _board.Respawn();
+            }
+        }
+
+        /// <summary>The whole greybox, board and rider together — one signal, one meaning.</summary>
+        private void SetVisible(bool visible)
+        {
+            if (_renderers == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _renderers.Length; i++)
+            {
+                if (_renderers[i] != null)
+                {
+                    _renderers[i].enabled = visible;
+                }
             }
         }
 
