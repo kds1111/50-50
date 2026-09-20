@@ -176,13 +176,9 @@ namespace FiftyFifty.Scoring
         /// </summary>
         public BankCredit CreditGrind(string grindName, float secondsOnRail, float ratePerSecond)
         {
-            // Same carry hook as tricks: off by default, honoured if switched on.
-            if (Board != null && Board.TrickCreditBlocked)
-            {
-                Note($"{grindName} — no credit");
-                return default;
-            }
-
+            // Carrying costs a grind nothing (#30, settled by the dev). #8 gave tricks landed
+            // while carrying full credit, and grinds now match it rather than quietly running a
+            // rule nobody decided. The trick hook stays where #8 put it.
             BankCredit credit = _pending.CreditGrind(grindName, secondsOnRail, ratePerSecond);
             Record(credit, grindName);
             return credit;

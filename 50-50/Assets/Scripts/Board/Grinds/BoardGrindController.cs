@@ -82,7 +82,8 @@ namespace FiftyFifty.Board.Grinds
         public float StallSpeed = 1f;
 
         [Tooltip("Sideways speed a fall pushes you off with, m/s, so you drop beside the rail " +
-                 "rather than onto it.")]
+                 "rather than onto it. Not a flourish: released straight down, the suspension " +
+                 "settles you back onto the bar you just fell off (#12, recorded on #30).")]
         public float FallOffSideSpeed = 1.5f;
 
         [Header("Popping out")]

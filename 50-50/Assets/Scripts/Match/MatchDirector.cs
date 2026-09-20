@@ -92,6 +92,8 @@ namespace FiftyFifty.Match
             public Side Side;
             public BoardChaseCamera Camera;
 
+            public BoardDebugHud Hud;
+
             /// <summary>This player's part of the screen, normalised, y down (GUI space).</summary>
             public Rect Region = new(0f, 0f, 1f, 1f);
         }
@@ -108,6 +110,7 @@ namespace FiftyFifty.Match
         private bool _restartRequested;
         private float _goShownUntil = -1f;
         private string _result;
+        private bool _splitApplied;
         private GUIStyle _huge;
         private GUIStyle _mid;
 
@@ -235,6 +238,47 @@ namespace FiftyFifty.Match
             _flow.CountdownSeconds = KickoffEnabled ? CountdownSeconds : 0f;
             _flow.GoalPauseSeconds = GoalPauseSeconds;
             _flow.TimerEnabled = TimerEnabled;
+
+            // #30: the split orientation used to be read once at setup, so flipping it while
+            // playing did nothing — the one setting that was not live.
+            if (Mode == MatchMode.MatchPlay && SplitTopBottom != _splitApplied)
+            {
+                ApplySplit();
+            }
+        }
+
+        /// <summary>
+        /// Lays out the two halves: top and bottom, or side by side. Called at setup and again
+        /// whenever the toggle changes, so the orientation can be judged by flipping it mid-play
+        /// rather than by restarting.
+        /// </summary>
+        private void ApplySplit()
+        {
+            if (_players.Count < 2)
+            {
+                return;
+            }
+
+            Player one = _players[0];
+            Player two = _players[1];
+
+            one.Region = SplitTopBottom ? new Rect(0f, 0f, 1f, 0.5f) : new Rect(0f, 0f, 0.5f, 1f);
+            two.Region = SplitTopBottom ? new Rect(0f, 0.5f, 1f, 0.5f) : new Rect(0.5f, 0f, 0.5f, 1f);
+
+            ApplyViewport(one);
+            ApplyViewport(two);
+
+            if (one.Hud != null)
+            {
+                one.Hud.ScreenRegion = one.Region;
+            }
+
+            if (two.Hud != null)
+            {
+                two.Hud.ScreenRegion = two.Region;
+            }
+
+            _splitApplied = SplitTopBottom;
         }
 
         private void OnGoal(GoalTargetVolume goal)
@@ -344,17 +388,11 @@ namespace FiftyFifty.Match
 
             two.Camera = CloneCamera(one.Camera, clone);
 
-            one.Region = SplitTopBottom ? new Rect(0f, 0f, 1f, 0.5f) : new Rect(0f, 0f, 0.5f, 1f);
-            two.Region = SplitTopBottom ? new Rect(0f, 0.5f, 1f, 0.5f) : new Rect(0.5f, 0f, 0.5f, 1f);
-
-            ApplyViewport(one);
-            ApplyViewport(two);
-
             BoardDebugHud hud = FindHudFor(PlayerOne);
 
             if (hud != null)
             {
-                hud.ScreenRegion = one.Region;
+                one.Hud = hud;
                 hud.ShowControls = false;
 
                 BoardDebugHud twoHud = Instantiate(hud.gameObject).GetComponent<BoardDebugHud>();
@@ -363,12 +401,15 @@ namespace FiftyFifty.Match
                 twoHud.Tricks = two.Tricks;
                 twoHud.Bank = null;
                 twoHud.Grinds = null;
-                twoHud.ScreenRegion = two.Region;
                 twoHud.ShowControls = false;
+                two.Hud = twoHud;
 
                 // R respawns player one only; one key cannot sensibly mean both.
                 twoHud.RespawnKey = Key.None;
             }
+
+            // Last, so both halves know their camera and their readout.
+            ApplySplit();
 
             if (TintRidersBySide)
             {
