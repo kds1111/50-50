@@ -22,6 +22,8 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 **Bail** — a failed landing: a named trick unfinished at touchdown, or a fall from a grind. Wipes the pending bank entirely ([#8](https://github.com/kds1111/50-50/issues/8)), then a knockdown in place and a respawn at the nearest safe point ([#6](https://github.com/kds1111/50-50/issues/6)).
 
+**Safe point** — a spot placed in the arena as somewhere a player can be returned to standing: clear flat ground, off the obstacles. The arena must define them ([#9](https://github.com/kds1111/50-50/issues/9)). Today a bail returns you to the nearest one; [#25](https://github.com/kds1111/50-50/issues/25) makes that the fallback and returns you beside where you fell instead.
+
 **Bank** (or **pending bank**) — a **multiplier** accumulated from landed tricks but not yet scored. Starts at 1.00; each landed trick adds to it, and it clamps at a cap rather than growing forever ([#8](https://github.com/kds1111/50-50/issues/8)). Visible to the player *and to the opponent*, at risk until cemented, and lost entirely on a bail or on conceding. The bank is the hook of the whole game.
 
 **Cement** — to convert the pending bank into permanent score. Scoring a goal is the only thing that cements, and a goal pays exactly the bank. Cementing resets the bank to 1.00 ([#8](https://github.com/kds1111/50-50/issues/8)).
@@ -54,4 +56,4 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 - The current effort is charted on the [vertical slice map](https://github.com/kds1111/50-50/issues/1) — destination, settled decisions, and what is deliberately not yet specified.
 - `docs/research/` holds research findings, each tied to the ticket that asked for it.
-- `docs/adr/` holds architectural decision records.
+- `docs/adr/` holds architectural decision records — none written yet; decisions have lived on the map so far.
