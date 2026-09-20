@@ -16,10 +16,16 @@ namespace FiftyFifty.Board.Tricks
     ///
     /// Two places skip the search entirely: out of bounds, and inside a goal mouth. "Beside where
     /// you fell" is a wrong answer in both, however clear the ground is.
+    ///
+    /// Every query goes through the <see cref="PhysicsScene"/> it is handed, never the global
+    /// `Physics` helpers: the editor probes run in their own scene, and a global query there sees
+    /// an empty world and passes everything.
     /// </summary>
     public static class RespawnSpotFinder
     {
-        private static readonly Collider[] Hits = new Collider[16];
+        // Sized well past what a spot can plausibly touch. A truncated result reads as "nothing
+        // in the way", so the buffer errs large rather than small.
+        private static readonly Collider[] Hits = new Collider[32];
 
         public struct Settings
         {
@@ -27,14 +33,26 @@ namespace FiftyFifty.Board.Tricks
             public int[] SamplesPerRing;
             public float MaxGroundSlope;
             public Vector3 Clearance;
+
+            /// <summary>How high the board sits above the ground it stands on.</summary>
+            public float StandHeight;
+
+            /// <summary>Lifts the clearance test off the floor so it does not graze the slab it stands on.</summary>
+            public float Skin;
+
             public float ProbeHeight;
+
+            /// <summary>How far a candidate spot may sit below the fall point and still count as beside it.</summary>
+            public float MaxStepDown;
+
+            /// <summary>How far down the out-of-bounds probe looks before calling it no floor at all.</summary>
             public float MaxDrop;
         }
 
         /// <summary>
-        /// True when a spot was found, with <paramref name="spot"/> set to it. False means the
-        /// caller should fall back to the nearest safe point — nothing nearby will do, or the
-        /// fall point was somewhere no search should start from.
+        /// True when a spot was found, with <paramref name="spot"/> set to the pose the board
+        /// should be placed at — already lifted to ride height, so what was tested is what is
+        /// used. False means the caller should fall back to the nearest safe point.
         /// </summary>
         public static bool TryFind(
             PhysicsScene scene,
@@ -45,14 +63,14 @@ namespace FiftyFifty.Board.Tricks
             out Vector3 spot)
         {
             spot = fallPoint;
+            Quaternion turn = Quaternion.Euler(0f, facing, 0f);
 
-            if (IsOutOfPlay(scene, fallPoint, settings))
+            if (IsOutOfPlay(scene, fallPoint, turn, settings))
             {
                 return false;
             }
 
             (float X, float Z)[] offsets = RespawnPlacement.Offsets(settings.Radii, settings.SamplesPerRing);
-            Quaternion turn = Quaternion.Euler(0f, facing, 0f);
 
             for (int i = 0; i < offsets.Length; i++)
             {
@@ -60,9 +78,9 @@ namespace FiftyFifty.Board.Tricks
                 // of where you were going rather than ahead of the world's Z axis.
                 Vector3 candidate = fallPoint + (turn * new Vector3(offsets[i].X, 0f, offsets[i].Z));
 
-                if (Standable(scene, candidate, settings, self, out Vector3 ground))
+                if (Standable(scene, candidate, turn, settings, self, out Vector3 stand))
                 {
-                    spot = ground;
+                    spot = stand;
                     return true;
                 }
             }
@@ -72,10 +90,10 @@ namespace FiftyFifty.Board.Tricks
 
         /// <summary>
         /// Out of bounds, or inside a goal. Out of bounds is "nothing underneath within the drop
-        /// distance" — the arena is a floor with walls, so a point with no floor beneath it is a
-        /// point outside the arena.
+        /// distance" — the arena is a floor inside walls, so a point with no floor beneath it is
+        /// a point outside the arena.
         /// </summary>
-        private static bool IsOutOfPlay(PhysicsScene scene, Vector3 point, Settings settings)
+        private static bool IsOutOfPlay(PhysicsScene scene, Vector3 point, Quaternion turn, Settings settings)
         {
             Vector3 origin = point + (Vector3.up * settings.ProbeHeight);
 
@@ -84,8 +102,8 @@ namespace FiftyFifty.Board.Tricks
                 return true;
             }
 
-            int found = Physics.OverlapBoxNonAlloc(
-                point, settings.Clearance * 0.5f, Hits, Quaternion.identity, ~0, QueryTriggerInteraction.Collide);
+            int found = scene.OverlapBox(
+                point, settings.Clearance * 0.5f, Hits, turn, ~0, QueryTriggerInteraction.Collide);
 
             for (int i = 0; i < found; i++)
             {
@@ -99,16 +117,26 @@ namespace FiftyFifty.Board.Tricks
         }
 
         /// <summary>
-        /// Whether a board could sit here: level enough ground, nothing solid in the way, and not
-        /// a rail — landing a respawn on a grind line would lock you straight back onto it.
+        /// Whether a board could sit here: ground within reach and level enough, nothing solid in
+        /// the way, and not a rail — landing a respawn on a grind line would lock you straight
+        /// back onto it.
         /// </summary>
         private static bool Standable(
-            PhysicsScene scene, Vector3 candidate, Settings settings, Transform self, out Vector3 ground)
+            PhysicsScene scene,
+            Vector3 candidate,
+            Quaternion turn,
+            Settings settings,
+            Transform self,
+            out Vector3 stand)
         {
-            ground = candidate;
+            stand = candidate;
             Vector3 origin = candidate + (Vector3.up * settings.ProbeHeight);
 
-            if (!scene.Raycast(origin, Vector3.down, out RaycastHit hit, settings.ProbeHeight + settings.MaxDrop))
+            // Only as far down as a step: a spot six metres away and forty metres below is not
+            // beside where you fell, it is off the edge of the thing you fell from.
+            float reach = settings.ProbeHeight + settings.MaxStepDown;
+
+            if (!scene.Raycast(origin, Vector3.down, out RaycastHit hit, reach))
             {
                 return false;
             }
@@ -123,16 +151,18 @@ namespace FiftyFifty.Board.Tricks
                 return false;
             }
 
-            Vector3 centre = hit.point + (Vector3.up * (settings.Clearance.y * 0.5f));
+            // Lifted by a skin so the box does not graze the slab it stands on, or the next slab
+            // along — the arena is flat boxes with seams, and every seam would otherwise reject.
+            Vector3 centre = hit.point + (Vector3.up * (settings.Skin + (settings.Clearance.y * 0.5f)));
 
-            int found = Physics.OverlapBoxNonAlloc(
-                centre, settings.Clearance * 0.5f, Hits, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+            int found = scene.OverlapBox(
+                centre, settings.Clearance * 0.5f, Hits, turn, ~0, QueryTriggerInteraction.Ignore);
 
             for (int i = 0; i < found; i++)
             {
                 Collider other = Hits[i];
 
-                if (other == null || other.transform.IsChildOf(self) || other.transform == self)
+                if (other == null || other.transform.IsChildOf(self))
                 {
                     continue;
                 }
@@ -146,7 +176,9 @@ namespace FiftyFifty.Board.Tricks
                 return false;
             }
 
-            ground = hit.point;
+            // The pose the board is placed at, not the floor under it: what was tested is what
+            // gets used, so a respawn never arrives sunk into the ground.
+            stand = hit.point + (Vector3.up * settings.StandHeight);
             return true;
         }
     }

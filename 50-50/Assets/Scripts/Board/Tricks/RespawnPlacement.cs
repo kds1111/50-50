@@ -61,9 +61,9 @@ namespace FiftyFifty.Board.Tricks
         /// Which way you face on coming back: the direction you were travelling when you lost it,
         /// or the board's own heading when you were too slow for travel to mean anything.
         ///
-        /// The threshold is the camera's — below the speed at which the camera stops trusting
-        /// travel direction, the respawn stops trusting it too, so the game has one answer to
-        /// "too slow to say where you were going" rather than two that can disagree.
+        /// The threshold is this rule's own, exposed on the trick controller. Below it, travel
+        /// direction is a slide or a shove rather than an intention, and facing you that way on
+        /// return would aim you at whatever knocked you over.
         /// </summary>
         public static float Facing(float speed, float travelHeading, float boardHeading, float latchSpeed) =>
             speed >= latchSpeed ? travelHeading : boardHeading;

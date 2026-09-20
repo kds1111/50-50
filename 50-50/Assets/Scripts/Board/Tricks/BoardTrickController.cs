@@ -117,12 +117,21 @@ namespace FiftyFifty.Board.Tricks
         [Tooltip("How far above a candidate spot the ground probe starts.")]
         public float ProbeHeight = 1.5f;
 
-        [Tooltip("How far below a candidate the probe looks for ground. Nothing within this is " +
-                 "read as out of bounds, which goes straight to a SafePoint.")]
+        [Tooltip("How far a spot may sit below the point you fell from and still count as " +
+                 "beside it. Past this it is off an edge, not next to you.")]
+        public float MaxStepDown = 3f;
+
+        [Tooltip("How far down the out-of-bounds probe looks before deciding there is no floor " +
+                 "at all. Nothing within this goes straight to a SafePoint.")]
         public float MaxDrop = 50f;
 
-        [Tooltip("Below this speed, m/s, the direction you were travelling is noise, so the " +
-                 "board's own heading is used for which way you face coming back.")]
+        [Tooltip("Lifts the clearance test off the floor so it does not graze the slab it stands " +
+                 "on. The arena is flat boxes with seams, and every seam would otherwise reject.")]
+        public float ClearanceSkin = 0.05f;
+
+        [Tooltip("Below this speed, m/s, the direction you were travelling is noise — a slide " +
+                 "or a shove — so the board's own heading is used for which way you face coming " +
+                 "back instead.")]
         public float TravelSpeedFloor = 2f;
 
         [Header("Bail flash (#25)")]
@@ -213,6 +222,7 @@ namespace FiftyFifty.Board.Tricks
 
             _board.NamedTrickTag = null;
             _board.TrickVisualRotation = Quaternion.identity;
+            SetVisible(true);
             ReleaseKnockdownHolds();
             _knockedDown = false;
             _run.Reset();
@@ -507,7 +517,10 @@ namespace FiftyFifty.Board.Tricks
                 SamplesPerRing = SamplesPerRing,
                 MaxGroundSlope = MaxGroundSlope,
                 Clearance = Clearance,
+                StandHeight = _board.RideHeight,
+                Skin = ClearanceSkin,
                 ProbeHeight = ProbeHeight,
+                MaxStepDown = MaxStepDown,
                 MaxDrop = MaxDrop,
             };
 
