@@ -116,8 +116,7 @@ namespace FiftyFifty.Board.Tricks
         private Quaternion _liveRotation = Quaternion.identity;
         private float _knockdownTimer;
         private bool _wasGrounded = true;
-        private int _bufferedSlot;
-        private float _bufferExpiry;
+        private readonly TrickInputBuffer _buffer = new();
 
         /// <summary>The trick currently turning, or null. Drives the ball's disturbance tag.</summary>
         public TrickDefinition RunningTrick => _run.InTrick ? _run.Trick : null;
@@ -231,7 +230,10 @@ namespace FiftyFifty.Board.Tricks
             bool grounded = _board.Grounded;
 
             // Buffered on every step, grounded or not — the press that matters most is the one
-            // made a frame before leaving the ground.
+            // made a frame before leaving the ground. The window is counted down here, on the
+            // simulation step, so a replayed tick reads the same buffer the original did (#26).
+            _buffer.WindowSeconds = InputBufferSeconds;
+            _buffer.Tick(dt);
             BufferInput();
 
             if (!grounded)
@@ -267,28 +269,23 @@ namespace FiftyFifty.Board.Tricks
                 return;
             }
 
-            _bufferedSlot = slot;
-            _bufferExpiry = Time.time + InputBufferSeconds;
+            _buffer.Accept(slot);
         }
 
         private void TryCommitFromBuffer()
         {
-            if (_bufferedSlot <= 0)
-            {
-                return;
-            }
+            int slot = _buffer.Live;
 
-            if (Time.time > _bufferExpiry)
+            if (slot <= 0)
             {
-                _bufferedSlot = 0;
                 return;
             }
 
             // Refused if one is already committed this air: one named trick per air (#6 rule 3),
             // and no cancelling the one you are in (rule 5).
-            if (_run.TryCommit(_definitions[_bufferedSlot - 1]))
+            if (_run.TryCommit(_definitions[slot - 1]))
             {
-                _bufferedSlot = 0;
+                _buffer.Clear();
             }
         }
 
@@ -358,7 +355,7 @@ namespace FiftyFifty.Board.Tricks
             }
 
             _run.Reset();
-            _bufferedSlot = 0;
+            _buffer.Clear();
             _lastOutcome = "BAIL";
             BeginKnockdown();
             return true;
@@ -382,7 +379,7 @@ namespace FiftyFifty.Board.Tricks
             }
 
             _run.Reset();
-            _bufferedSlot = 0;
+            _buffer.Clear();
             _restRotation = Quaternion.identity;
             _liveRotation = Quaternion.identity;
             _lastOutcome = "-";
@@ -425,7 +422,7 @@ namespace FiftyFifty.Board.Tricks
             _knockedDown = false;
             ReleaseKnockdownHolds();
             _run.Reset();
-            _bufferedSlot = 0;
+            _buffer.Clear();
             _restRotation = Quaternion.identity;
 
             if (!respawn)
@@ -433,11 +430,11 @@ namespace FiftyFifty.Board.Tricks
                 return;
             }
 
-            SafePoint point = SafePoint.Nearest(transform.position);
+            SafePoint point = SafePoint.Nearest(_board.Body.position);
 
             if (point != null)
             {
-                _board.RespawnAt(point.transform.position, point.transform.eulerAngles.y);
+                _board.RespawnAt(point.Position, point.Yaw);
             }
             else
             {

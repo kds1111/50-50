@@ -26,7 +26,24 @@ namespace FiftyFifty.Board.Tricks
         [Tooltip("Drawn in the editor so a scene's safe points can be read at a glance.")]
         public float GizmoSize = 1.2f;
 
-        private void OnEnable() => All.Add(this);
+        /// <summary>
+        /// Where a player is put back, captured when the point registers rather than read at the
+        /// moment of a bail (#26). The search runs inside the physics step, where a transform
+        /// gives the rendered pose; safe points are scenery and never move, so reading them once
+        /// is both correct and cheaper.
+        /// </summary>
+        public Vector3 Position { get; private set; }
+
+        /// <summary>The heading a player faces on being put back here.</summary>
+        public float Yaw { get; private set; }
+
+        private void OnEnable()
+        {
+            Transform t = transform;
+            Position = t.position;
+            Yaw = t.eulerAngles.y;
+            All.Add(this);
+        }
 
         private void OnDisable() => All.Remove(this);
 
@@ -47,7 +64,7 @@ namespace FiftyFifty.Board.Tricks
                     continue;
                 }
 
-                float sqr = (candidate.transform.position - position).sqrMagnitude;
+                float sqr = (candidate.Position - position).sqrMagnitude;
 
                 if (sqr < bestSqr)
                 {

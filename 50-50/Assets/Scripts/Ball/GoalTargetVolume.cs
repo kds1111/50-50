@@ -50,12 +50,16 @@ namespace FiftyFifty.Ball
 
         public int Entries => _entries;
         public float LastEntrySpeed => _lastEntrySpeed;
-        public float SecondsSinceEntry => Time.time - _lastEntryTime;
 
         private MatchDirector _director;
-        private float _lastEntryTime = -999f;
         private BallController _pending;
-        private float _returnAt;
+
+        // Both counted down on the simulation step, never measured against the wall clock (#26):
+        // the lockout guards a bank mutation, and the return moves a rigidbody. Wall-clock time
+        // does not rewind, so a replayed tick would read a different answer than the tick it
+        // replaces.
+        private float _lockoutRemaining;
+        private float _returnRemaining;
 
         private void Reset()
         {
@@ -78,14 +82,14 @@ namespace FiftyFifty.Ball
         {
             var ball = other.GetComponentInParent<BallController>();
 
-            if (ball == null || Time.time - _lastEntryTime < LockoutSeconds)
+            if (ball == null || _lockoutRemaining > 0f)
             {
                 return;
             }
 
             _entries++;
             _lastEntrySpeed = ball.Velocity.magnitude;
-            _lastEntryTime = Time.time;
+            _lockoutRemaining = LockoutSeconds;
 
             Debug.Log($"[50-50] Goal #{_entries} in side {DefendedBy}'s net at {_lastEntrySpeed:0.0} m/s");
 
@@ -102,7 +106,7 @@ namespace FiftyFifty.Ball
             if (ReturnBallAfterEntry)
             {
                 _pending = ball;
-                _returnAt = Time.time + ReturnDelay;
+                _returnRemaining = ReturnDelay;
             }
         }
 
@@ -132,9 +136,23 @@ namespace FiftyFifty.Ball
             }
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
-            if (_pending == null || Time.time < _returnAt)
+            float dt = Time.fixedDeltaTime;
+
+            if (_lockoutRemaining > 0f)
+            {
+                _lockoutRemaining -= dt;
+            }
+
+            if (_pending == null)
+            {
+                return;
+            }
+
+            _returnRemaining -= dt;
+
+            if (_returnRemaining > 0f)
             {
                 return;
             }

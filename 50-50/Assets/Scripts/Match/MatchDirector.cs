@@ -98,7 +98,10 @@ namespace FiftyFifty.Match
 
         private readonly MatchFlow _flow = new();
         private readonly List<Player> _players = new();
-        private readonly Dictionary<KickoffSpotKind, Transform> _spots = new();
+        // Poses, not Transforms (#26). Resetting happens inside the physics step, where
+        // reading a transform gives the RENDERED pose rather than the simulated one. The spots
+        // never move, so they are read once at startup — the one place reading transforms is fine.
+        private readonly Dictionary<KickoffSpotKind, (Vector3 Position, float Yaw)> _spots = new();
         private BallController _ball;
         private Vector3 _playerOneStart;
         private float _playerOneStartYaw;
@@ -149,7 +152,8 @@ namespace FiftyFifty.Match
 
             foreach (KickoffSpot spot in FindObjectsByType<KickoffSpot>(FindObjectsSortMode.None))
             {
-                _spots[spot.Kind] = spot.transform;
+                Transform t = spot.transform;
+                _spots[spot.Kind] = (t.position, t.eulerAngles.y);
             }
 
             // Scenery and a board that has not moved yet: the one place reading transforms is fine.
@@ -285,9 +289,9 @@ namespace FiftyFifty.Match
                 return;
             }
 
-            if (_spots.TryGetValue(KickoffSpotKind.Ball, out Transform ballSpot))
+            if (_spots.TryGetValue(KickoffSpotKind.Ball, out (Vector3 Position, float Yaw) ballSpot))
             {
-                _ball.ResetTo(ballSpot.position);
+                _ball.ResetTo(ballSpot.Position);
             }
             else
             {
@@ -304,9 +308,9 @@ namespace FiftyFifty.Match
         {
             KickoffSpotKind kind = side == Side.A ? KickoffSpotKind.SideA : KickoffSpotKind.SideB;
 
-            if (_spots.TryGetValue(kind, out Transform spot))
+            if (_spots.TryGetValue(kind, out (Vector3 Position, float Yaw) spot))
             {
-                return (spot.position, spot.eulerAngles.y);
+                return (spot.Position, spot.Yaw);
             }
 
             if (side == _players[0].Side)
