@@ -268,6 +268,8 @@ namespace FiftyFifty.Scoring
         private void Note(string text)
         {
             _lastEvent = text;
+            // Presentation time on purpose (#26): only the debug HUD reads this, to fade the
+            // last bank event. Nothing simulated depends on it.
             _lastEventTime = Time.time;
             _bank = _pending.Value;
         }

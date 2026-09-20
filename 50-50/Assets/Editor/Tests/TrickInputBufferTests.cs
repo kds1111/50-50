@@ -45,9 +45,9 @@ namespace FiftyFifty.Tests
 
             Assert.AreEqual(2, buffer.Live, "0.24s in, still inside a 0.25s window");
 
-            Steps(buffer, 2);
+            Steps(buffer, 1);
 
-            Assert.AreEqual(0, buffer.Live, "the window has passed");
+            Assert.AreEqual(0, buffer.Live, "0.26s in, one step past the window");
         }
 
         [Test]
@@ -63,6 +63,23 @@ namespace FiftyFifty.Tests
             Steps(buffer, 10);
 
             Assert.AreEqual(3, buffer.Live, "the newer press is the one held, with its own window");
+        }
+
+        [Test]
+        public void Nothing_asked_for_holds_nothing()
+        {
+            var buffer = new TrickInputBuffer { WindowSeconds = 0.25f };
+            buffer.Accept(2);
+
+            // 0 is the input struct's "no trick" value. Accepting it must not park a slot that
+            // can never commit, and must not leave a window quietly running.
+            buffer.Accept(0);
+
+            Assert.AreEqual(0, buffer.Live);
+
+            Steps(buffer, 1);
+
+            Assert.AreEqual(0, buffer.Live);
         }
 
         [Test]

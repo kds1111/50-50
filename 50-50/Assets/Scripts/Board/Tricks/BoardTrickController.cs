@@ -209,6 +209,12 @@ namespace FiftyFifty.Board.Tricks
         {
             float dt = Time.fixedDeltaTime;
 
+            // Before any early return: a held press goes stale on its own schedule, whether or
+            // not this step reaches the trick logic. Draining it only on steps that get that far
+            // would let switching tricks back on resurrect a press made long ago.
+            _buffer.WindowSeconds = InputBufferSeconds;
+            _buffer.Tick(dt);
+
             if (!TricksEnabled)
             {
                 if (_knockedDown)
@@ -230,10 +236,7 @@ namespace FiftyFifty.Board.Tricks
             bool grounded = _board.Grounded;
 
             // Buffered on every step, grounded or not — the press that matters most is the one
-            // made a frame before leaving the ground. The window is counted down here, on the
-            // simulation step, so a replayed tick reads the same buffer the original did (#26).
-            _buffer.WindowSeconds = InputBufferSeconds;
-            _buffer.Tick(dt);
+            // made a frame before leaving the ground.
             BufferInput();
 
             if (!grounded)

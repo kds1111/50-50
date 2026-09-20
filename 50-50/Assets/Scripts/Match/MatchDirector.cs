@@ -254,6 +254,8 @@ namespace FiftyFifty.Match
 
             if ((signal & MatchSignal.Go) != 0)
             {
+                // Presentation time on purpose (#26): this deadline is read only by OnGUI and
+                // feeds nothing simulated, so it may use the clock the display runs on.
                 _goShownUntil = Time.time + 0.7f;
             }
 

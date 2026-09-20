@@ -76,11 +76,22 @@ namespace FiftyFifty.Board.Tricks
             return best;
         }
 
+        /// <summary>
+        /// In play, drawn from the captured pose rather than the live transform — so what the
+        /// editor shows is where a player would actually be put back. Dragging a safe point
+        /// during Play moves the gizmo nowhere, which is the honest picture: the capture happened
+        /// when it registered. Move them while stopped.
+        /// </summary>
         private void OnDrawGizmos()
         {
+            Vector3 at = Application.isPlaying ? Position : transform.position;
+            Vector3 facing = Application.isPlaying
+                ? Quaternion.Euler(0f, Yaw, 0f) * Vector3.forward
+                : transform.forward;
+
             Gizmos.color = new Color(0.3f, 0.9f, 0.4f, 0.9f);
-            Gizmos.DrawWireSphere(transform.position, GizmoSize * 0.3f);
-            Gizmos.DrawRay(transform.position, transform.forward * GizmoSize);
+            Gizmos.DrawWireSphere(at, GizmoSize * 0.3f);
+            Gizmos.DrawRay(at, facing * GizmoSize);
         }
     }
 }
