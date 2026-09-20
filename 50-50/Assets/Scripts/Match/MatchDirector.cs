@@ -74,7 +74,8 @@ namespace FiftyFifty.Match
         public Key RestartKey = Key.Enter;
 
         [Header("Split screen")]
-        [Tooltip("Top and bottom. Off puts the players side by side.")]
+        [Tooltip("Top and bottom. Off puts the players side by side. Live: flip it while " +
+                 "playing and both views and both readouts move with it (#30).")]
         public bool SplitTopBottom = true;
 
         [Header("Debug (read-only)")]
@@ -110,7 +111,9 @@ namespace FiftyFifty.Match
         private bool _restartRequested;
         private float _goShownUntil = -1f;
         private string _result;
-        private bool _splitApplied;
+        // Nullable on purpose: false would mean "already laid out side by side", which is
+        // exactly the case that must still be applied on the first pass.
+        private bool? _splitApplied;
         private GUIStyle _huge;
         private GUIStyle _mid;
 
@@ -241,7 +244,7 @@ namespace FiftyFifty.Match
 
             // #30: the split orientation used to be read once at setup, so flipping it while
             // playing did nothing — the one setting that was not live.
-            if (Mode == MatchMode.MatchPlay && SplitTopBottom != _splitApplied)
+            if (Mode == MatchMode.MatchPlay && _splitApplied != SplitTopBottom)
             {
                 ApplySplit();
             }
@@ -408,9 +411,6 @@ namespace FiftyFifty.Match
                 twoHud.RespawnKey = Key.None;
             }
 
-            // Last, so both halves know their camera and their readout.
-            ApplySplit();
-
             if (TintRidersBySide)
             {
                 Tint(one);
@@ -418,6 +418,10 @@ namespace FiftyFifty.Match
             }
 
             _players.Add(two);
+
+            // After the second player joins the list, not before: ApplySplit needs both halves,
+            // and called any earlier it silently does nothing.
+            ApplySplit();
         }
 
         private static Player Describe(GameObject board)

@@ -178,7 +178,10 @@ namespace FiftyFifty.Scoring
         {
             // Carrying costs a grind nothing (#30, settled by the dev). #8 gave tricks landed
             // while carrying full credit, and grinds now match it rather than quietly running a
-            // rule nobody decided. The trick hook stays where #8 put it.
+            // rule nobody decided. The carry hook itself is #7's `CarryBlocksTrickCredit` on
+            // BallHandler and still gates tricks; it never should have reached grind credit.
+            // Note the flag it writes is also raised by a knockdown, which a grind fall can
+            // never reach — a fall bails instead of crediting.
             BankCredit credit = _pending.CreditGrind(grindName, secondsOnRail, ratePerSecond);
             Record(credit, grindName);
             return credit;
