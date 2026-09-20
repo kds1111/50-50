@@ -38,9 +38,9 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 **Ball** — the contested object. A large, floaty rigidbody, readable at speed.
 
-**Kickoff** — the reset that follows a goal, returning ball and players to starting positions.
+**Kickoff** — the reset at the start of a match and after every goal: ball to its spot, each player to their side's kickoff spot, then a short countdown with the boards held still. Anything in progress — a trick in the air, a grind, a knockdown — is cancelled with no consequence. Banks are untouched; the goal already settled them ([#24](https://github.com/kds1111/50-50/issues/24)). Distinct from the **respawn** after a bail, which puts one player at the nearest safe point.
 
-**Match** — a timed contest ending on the clock, with a kickoff after each goal. Highest cemented score wins.
+**Match** — a contest with a kickoff after each goal, optionally ending on a clock. Highest cemented score wins. Played in one of two **modes**: **Match Play**, two players split-screen on one machine, or **Free Skate**, one player alone ([#24](https://github.com/kds1111/50-50/issues/24)). In the slice the clock is an Inspector switch, not a designed feature.
 
 **Tick** — the fixed simulation step. All gameplay advances on ticks, never on frames. Note that under FishNet a tick is *not* `FixedUpdate` — FishNet drives `Physics.Simulate` itself.
 
@@ -48,7 +48,7 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 **Reconcile data** — the serializable state struct restoring a predicted object to an authoritative past tick. Any value that survives across ticks and affects simulation output belongs here.
 
-**Bot** — the heuristic opponent. A test fixture, not a designed opponent. It produces replicate data exactly as a human does.
+**Bot** — a computer-controlled opponent. Out of the slice: replaced by split-screen as the way to test the game ([#23](https://github.com/kds1111/50-50/issues/23)). Any future bot produces replicate data exactly as a human does.
 
 ## Related documents
 

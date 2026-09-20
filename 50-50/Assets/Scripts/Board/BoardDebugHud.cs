@@ -8,6 +8,10 @@ namespace FiftyFifty.Board
     /// Minimal on-screen readout while tuning movement: speed, grounded state, airtime, and
     /// the controls. IMGUI so it needs no canvas, no prefabs and no wiring — delete the
     /// component when the real HUD arrives.
+    ///
+    /// Two layers (#24). The bank, the score and the opponent's line are the game and always
+    /// show. Everything else is a window into the simulation, and H hides it — every readout on
+    /// screen at once, so one key works for both halves of a split screen.
     /// </summary>
     public class BoardDebugHud : MonoBehaviour
     {
@@ -27,8 +31,25 @@ namespace FiftyFifty.Board
         [Tooltip("Seconds the last bank event (credit, loss, goal) stays on screen.")]
         public float BankEventSeconds = 3f;
 
-        [Tooltip("Key that puts the board back at its spawn point.")]
+        [Tooltip("Key that puts the board back at its spawn point. None for no key — player two's " +
+                 "readout in split-screen, so R does not respawn both.")]
         public Key RespawnKey = Key.R;
+
+        [Tooltip("Shows and hides the debug part of every readout on screen. Bank, score and the " +
+                 "opponent's line always stay.")]
+        public Key ToggleKey = Key.H;
+
+        [Tooltip("The part of the screen this readout lives in, 0 to 1, from the top left. Set by " +
+                 "the match for split-screen (#24); the whole screen otherwise.")]
+        public Rect ScreenRegion = new(0f, 0f, 1f, 1f);
+
+        [Tooltip("The controls cheat-sheet. Off in split-screen, where it would fill half the screen.")]
+        public bool ShowControls = true;
+
+        /// <summary>Shared by every readout, so H flips both halves together.</summary>
+        public static bool ShowDebug = true;
+
+        private static int _lastToggleFrame = -1;
 
         private GUIStyle _big;
         private GUIStyle _small;
@@ -36,9 +57,22 @@ namespace FiftyFifty.Board
         private void Update()
         {
             Keyboard keys = Keyboard.current;
-            if (Board != null && keys != null && keys[RespawnKey].wasPressedThisFrame)
+
+            if (keys == null)
+            {
+                return;
+            }
+
+            if (Board != null && RespawnKey != Key.None && keys[RespawnKey].wasPressedThisFrame)
             {
                 Board.Respawn();
+            }
+
+            // Every readout sees the same key press; only the first one this frame flips it.
+            if (ToggleKey != Key.None && keys[ToggleKey].wasPressedThisFrame && _lastToggleFrame != Time.frameCount)
+            {
+                ShowDebug = !ShowDebug;
+                _lastToggleFrame = Time.frameCount;
             }
         }
 
@@ -62,7 +96,17 @@ namespace FiftyFifty.Board
                 Grinds = Board.GetComponent<FiftyFifty.Board.Grinds.BoardGrindController>();
             }
 
-            GUILayout.BeginArea(new Rect(18, 18, 560, 420));
+            var region = new Rect(
+                ScreenRegion.x * Screen.width,
+                ScreenRegion.y * Screen.height,
+                ScreenRegion.width * Screen.width,
+                ScreenRegion.height * Screen.height);
+
+            GUILayout.BeginArea(new Rect(
+                region.x + 18f,
+                region.y + 18f,
+                Mathf.Min(560f, region.width - 36f),
+                Mathf.Max(0f, region.height - 36f)));
 
             if (Bank != null && Bank.isActiveAndEnabled)
             {
@@ -72,7 +116,23 @@ namespace FiftyFifty.Board
                 GUILayout.Label(
                     Bank.SecondsSinceEvent < BankEventSeconds ? Bank.LastEvent : " ",
                     _small);
+
+                // The opponent can see your multiplier (#8), and you can see theirs: it is what
+                // makes them choose between hunting you and playing the ball.
+                PlayerBank opponent = OpponentOf(Bank);
+
+                if (opponent != null)
+                {
+                    GUILayout.Label($"OPP  x{opponent.Bank:0.00}     {opponent.Score:0.00}", _small);
+                }
+
                 GUILayout.Space(6);
+            }
+
+            if (!ShowDebug)
+            {
+                GUILayout.EndArea();
+                return;
             }
 
             if (Grinds != null && Grinds.Grinding)
@@ -124,17 +184,33 @@ namespace FiftyFifty.Board
                 GUILayout.Label($"last grind: {Grinds.LastExit}", _small);
             }
 
-            GUILayout.Space(10);
-            GUILayout.Label(
-                "pad:  LS steer / air spin   RS camera   RT accelerate   LT brake   A ollie\n" +
-                "keys: A,D steer / air spin   W accelerate   S brake   arrows camera   SPACE ollie\n" +
-                "L3 / SHIFT powerslide   (brake held at rest reverses)\n" +
-                "tricks: hold A (SPACE) + B/X/Y  —  keys J / K / L\n" +
-                "RB / E grab (tap on, tap off)   LB / F punch   R3 / C reverse (ground)\n" +
-                "R respawn",
-                _small);
+            if (ShowControls)
+            {
+                GUILayout.Space(10);
+                GUILayout.Label(
+                    "pad:  LS steer / air spin   RS camera   RT accelerate   LT brake   A ollie\n" +
+                    "keys: A,D steer / air spin   W accelerate   S brake   arrows camera   SPACE ollie\n" +
+                    "L3 / SHIFT powerslide   (brake held at rest reverses)\n" +
+                    "tricks: hold A (SPACE) + B/X/Y  —  keys J / K / L\n" +
+                    "RB / E grab (tap on, tap off)   LB / F punch   R3 / C reverse (ground)\n" +
+                    "R respawn   H hide this readout",
+                    _small);
+            }
 
             GUILayout.EndArea();
+        }
+
+        private static PlayerBank OpponentOf(PlayerBank mine)
+        {
+            foreach (PlayerBank other in PlayerBank.All)
+            {
+                if (other != mine && other.Side != mine.Side)
+                {
+                    return other;
+                }
+            }
+
+            return null;
         }
     }
 }

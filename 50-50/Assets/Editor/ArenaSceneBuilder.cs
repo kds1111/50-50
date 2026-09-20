@@ -109,6 +109,10 @@ namespace FiftyFifty.EditorTools
             // menu item, so a rebuilt scene and a wired one match.
             ScoringWiring.WireOpenScene();
 
+            // The match (#24): a director and kickoff spots. Player two is cloned at Play time,
+            // never saved here.
+            MatchWiring.WireOpenScene();
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
             Debug.Log($"[50-50] Arena scene written to {ScenePath}");

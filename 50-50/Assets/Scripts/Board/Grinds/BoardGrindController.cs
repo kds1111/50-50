@@ -428,6 +428,19 @@ namespace FiftyFifty.Board.Grinds
             Unlock();
         }
 
+        /// <summary>A kickoff (#24): off the rail with no credit and no fall. The kickoff moves the board.</summary>
+        public void CancelForKickoff()
+        {
+            if (_grinding)
+            {
+                _lastExit = $"{_grindName}  {_seconds:0.00}s  cancelled (kickoff)";
+                Unlock();
+            }
+
+            _lastRail = null;
+            _airSinceExit = 999f;
+        }
+
         /// <summary>Drop the grind without touching the board at all.</summary>
         private void Abandon()
         {

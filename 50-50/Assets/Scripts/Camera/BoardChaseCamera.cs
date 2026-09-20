@@ -89,6 +89,27 @@ namespace FiftyFifty.CameraRig
             }
         }
 
+        /// <summary>
+        /// Jump straight to the resting spot behind the target: no damping, no orbit. For a
+        /// kickoff (#24), which teleports the board — otherwise the view swoops across the arena
+        /// after every goal.
+        /// </summary>
+        public void SnapToTarget()
+        {
+            if (Target == null)
+            {
+                return;
+            }
+
+            _orbitYaw = 0f;
+            _orbitPitch = 0f;
+            _idleTime = 0f;
+            _anchorHeading = BoardHeading();
+            _heading = FlatHeading();
+            transform.position = Target.position + (_heading * Offset);
+            transform.LookAt(Target.position + (Vector3.up * LookAtHeight));
+        }
+
         private void LateUpdate()
         {
             if (Target == null)

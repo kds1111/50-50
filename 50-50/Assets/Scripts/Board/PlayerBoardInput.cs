@@ -99,6 +99,21 @@ namespace FiftyFifty.Board
                  "dexterity test rather than an input.")]
         public float ChordGraceSeconds = 0.2f;
 
+        [Header("Device (split-screen, #24)")]
+        [Tooltip("0 for player one, 1 for player two. MatchDirector sets this; a lone board leaves it at 0.")]
+        public int PlayerIndex;
+
+        [Tooltip("Players sharing this machine. With one, this board reads the keyboard and whichever " +
+                 "pad was touched last. With more, pads are dealt out in connection order and the " +
+                 "keyboard stays with player one.")]
+        public int PlayersOnThisMachine = 1;
+
+        [Tooltip("Force a particular pad, by connection order from 0. -1 deals them out automatically.")]
+        public int PadOverride = -1;
+
+        [Tooltip("Whether this board reads the keyboard at all. Only player one's does in split-screen.")]
+        public bool UseKeyboard = true;
+
         [Header("Read-only (for debugging in play mode)")]
         [SerializeField] private Vector2 _debugLeftStick;
         [SerializeField] private float _debugThrottle;
@@ -115,8 +130,8 @@ namespace FiftyFifty.Board
 
         private void Update()
         {
-            Gamepad pad = Gamepad.current;
-            Keyboard keys = Keyboard.current;
+            Gamepad pad = ResolvePad();
+            Keyboard keys = UseKeyboard ? Keyboard.current : null;
 
             if (pad != null && pad.buttonSouth.wasPressedThisFrame)
             {
@@ -205,8 +220,8 @@ namespace FiftyFifty.Board
 
         public override BoardInputState Read()
         {
-            Gamepad pad = Gamepad.current;
-            Keyboard keys = Keyboard.current;
+            Gamepad pad = ResolvePad();
+            Keyboard keys = UseKeyboard ? Keyboard.current : null;
 
             Vector2 left = Vector2.zero;
             Vector2 right = Vector2.zero;
@@ -295,8 +310,8 @@ namespace FiftyFifty.Board
         /// </summary>
         public Vector2 PeekCameraLook()
         {
-            Gamepad pad = Gamepad.current;
-            Keyboard keys = Keyboard.current;
+            Gamepad pad = ResolvePad();
+            Keyboard keys = UseKeyboard ? Keyboard.current : null;
 
             Vector2 look = pad != null ? pad.rightStick.ReadValue() : Vector2.zero;
 
@@ -309,6 +324,20 @@ namespace FiftyFifty.Board
             }
 
             return ApplyDeadzone(Vector2.ClampMagnitude(look, 1f));
+        }
+
+        /// <summary>This player's pad, dealt by PadDealing. Resolved on every read, so a pad
+        /// plugged in or pulled out mid-session is picked up without a restart.</summary>
+        private Gamepad ResolvePad()
+        {
+            int index = PadDealing.PadFor(PlayerIndex, PlayersOnThisMachine, Gamepad.all.Count, PadOverride);
+
+            return index switch
+            {
+                PadDealing.AnyPad => Gamepad.current,
+                PadDealing.NoPad => null,
+                _ => Gamepad.all[index],
+            };
         }
 
         private Vector2 ApplyDeadzone(Vector2 v)

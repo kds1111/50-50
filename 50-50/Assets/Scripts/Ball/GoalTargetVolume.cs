@@ -41,6 +41,12 @@ namespace FiftyFifty.Ball
         [SerializeField] private int _entries;
         [SerializeField] private float _lastEntrySpeed;
 
+        /// <summary>
+        /// Raised on every counted goal, after the banks are settled. The match (#24) listens for
+        /// it to run a kickoff; the goal itself never resets anything.
+        /// </summary>
+        public static event System.Action<GoalTargetVolume> Scored;
+
         public int Entries => _entries;
         public float LastEntrySpeed => _lastEntrySpeed;
         public float SecondsSinceEntry => Time.time - _lastEntryTime;
@@ -73,6 +79,8 @@ namespace FiftyFifty.Ball
             {
                 Settle();
             }
+
+            Scored?.Invoke(this);
 
             if (ReturnBallAfterEntry)
             {

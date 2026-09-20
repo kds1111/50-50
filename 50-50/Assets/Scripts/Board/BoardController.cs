@@ -322,6 +322,13 @@ namespace FiftyFifty.Board
         [System.NonSerialized] public IBoardMotionOverride MotionOverride;
 
         /// <summary>
+        /// Held still by the match: during a kickoff countdown and after the final whistle (#24).
+        /// Input is ignored and the board does not roll. The camera still orbits — it reads the
+        /// stick on its own, never through the board.
+        /// </summary>
+        [System.NonSerialized] public bool Frozen;
+
+        /// <summary>
         /// STAND-IN for the trick tag #6 will provide. A plain ollie accumulates no yaw, so it
         /// never counts as a trick — which is what keeps ollieing to block a goal free of risk.
         /// </summary>
@@ -471,6 +478,14 @@ namespace FiftyFifty.Board
         {
 
             _input = InputSource != null ? InputSource.Read() : default;
+
+            if (Frozen)
+            {
+                // Read and thrown away, so a press during the countdown does not fire at "go".
+                _input = default;
+                Vector3 v = _rb.linearVelocity;
+                _rb.linearVelocity = new Vector3(0f, v.y, 0f);
+            }
 
             // Read the PHYSICS pose, never the transform. With interpolation on, transform is
             // the rendered pose during FixedUpdate — a slightly different height than physics

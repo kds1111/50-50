@@ -205,6 +205,14 @@ namespace FiftyFifty.Scoring
         /// <summary>A goal against this side. The bank is lost (#8).</summary>
         public void Concede() => Forfeit(ForfeitReason.Conceded);
 
+        /// <summary>A fresh match (#24): score back to zero and an empty bank.</summary>
+        public void ResetForNewMatch()
+        {
+            _score = 0f;
+            ResetBank();
+            Note("new match");
+        }
+
         /// <summary>Straight back to an empty bank, costing nothing. For a match reset (#22).</summary>
         public void ResetBank()
         {

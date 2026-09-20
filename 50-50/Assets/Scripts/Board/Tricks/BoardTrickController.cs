@@ -364,6 +364,30 @@ namespace FiftyFifty.Board.Tricks
             return true;
         }
 
+        /// <summary>
+        /// A kickoff puts everyone back (#24). Whatever was in progress is cancelled with no
+        /// consequence: a trick in the air neither bails nor pays, a knockdown simply ends. No
+        /// respawn — the kickoff places the board itself.
+        ///
+        /// The trick cancel is the one that matters. Without it, a trick still turning when the
+        /// board is moved to its kickoff spot would touch down there unfinished and bail, wiping a
+        /// bank the goal had only just reset.
+        /// </summary>
+        public void CancelForKickoff()
+        {
+            if (_knockedDown)
+            {
+                _knockedDown = false;
+                ReleaseKnockdownHolds();
+            }
+
+            _run.Reset();
+            _bufferedSlot = 0;
+            _restRotation = Quaternion.identity;
+            _liveRotation = Quaternion.identity;
+            _lastOutcome = "-";
+        }
+
         private void BeginKnockdown()
         {
             _knockedDown = true;
