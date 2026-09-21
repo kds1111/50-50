@@ -60,7 +60,7 @@ namespace FiftyFifty.Tests
         [Test]
         public void You_face_the_way_you_were_travelling()
         {
-            float facing = RespawnPlacement.Facing(speed: 8f, travelHeading: 30f, boardHeading: 200f, latchSpeed: 2f);
+            float facing = RespawnPlacement.Facing(speed: 8f, travelHeading: 30f, boardHeading: 200f, travelSpeedFloor: 2f);
 
             Assert.AreEqual(30f, facing, Tolerance);
         }
@@ -68,9 +68,10 @@ namespace FiftyFifty.Tests
         [Test]
         public void Too_slow_to_say_where_you_were_going_uses_the_board()
         {
-            // Below the speed the camera itself stops trusting travel direction, so the two
-            // answers agree rather than the respawn inventing its own threshold.
-            float facing = RespawnPlacement.Facing(speed: 0.4f, travelHeading: 30f, boardHeading: 200f, latchSpeed: 2f);
+            // Below the floor, travel direction is a slide or a shove rather than an intention,
+            // so the board's own heading is the better answer. The floor is this rule's own; no
+            // other system shares it.
+            float facing = RespawnPlacement.Facing(speed: 0.4f, travelHeading: 30f, boardHeading: 200f, travelSpeedFloor: 2f);
 
             Assert.AreEqual(200f, facing, Tolerance);
         }

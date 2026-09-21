@@ -25,6 +25,11 @@ namespace FiftyFifty.Board.Tricks
     {
         // Sized well past what a spot can plausibly touch. A truncated result reads as "nothing
         // in the way", so the buffer errs large rather than small.
+        //
+        // Every query here states its mask and its trigger handling rather than taking Unity's
+        // defaults. The project sets m_QueriesHitTriggers, so a defaulted raycast will happily
+        // take a trigger volume for the floor and stand a board on thin air — while the overlap
+        // beside it, which does pass Ignore, cannot see that same collider to reject it.
         private static readonly Collider[] Hits = new Collider[32];
 
         public struct Settings
@@ -78,6 +83,15 @@ namespace FiftyFifty.Board.Tricks
                 // of where you were going rather than ahead of the world's Z axis.
                 Vector3 candidate = fallPoint + (turn * new Vector3(offsets[i].X, 0f, offsets[i].Z));
 
+                // Every candidate answers the same question the fall point did. Asking it only of
+                // the fall point left the rings free to walk into a goal: Standable ignores
+                // triggers, so a goal mouth is invisible to it however clear the floor reads, and
+                // a bail a metre outside the line came back standing in the net.
+                if (IsOutOfPlay(scene, candidate, turn, settings))
+                {
+                    continue;
+                }
+
                 if (Standable(scene, candidate, turn, settings, self, out Vector3 stand))
                 {
                     spot = stand;
@@ -97,7 +111,9 @@ namespace FiftyFifty.Board.Tricks
         {
             Vector3 origin = point + (Vector3.up * settings.ProbeHeight);
 
-            if (!scene.Raycast(origin, Vector3.down, out RaycastHit _, settings.ProbeHeight + settings.MaxDrop))
+            if (!scene.Raycast(
+                    origin, Vector3.down, out RaycastHit _, settings.ProbeHeight + settings.MaxDrop,
+                    ~0, QueryTriggerInteraction.Ignore))
             {
                 return true;
             }
@@ -136,7 +152,8 @@ namespace FiftyFifty.Board.Tricks
             // beside where you fell, it is off the edge of the thing you fell from.
             float reach = settings.ProbeHeight + settings.MaxStepDown;
 
-            if (!scene.Raycast(origin, Vector3.down, out RaycastHit hit, reach))
+            if (!scene.Raycast(
+                    origin, Vector3.down, out RaycastHit hit, reach, ~0, QueryTriggerInteraction.Ignore))
             {
                 return false;
             }

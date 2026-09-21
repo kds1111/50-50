@@ -120,10 +120,19 @@ namespace FiftyFifty.Match
         public MatchPhase Phase => _flow.Phase;
 
         /// <summary>
-        /// Whether a goal counts right now (#29). With kickoffs switched off there are no phases
-        /// worth speaking of, so scoring is always open and the scene behaves as it did before.
+        /// Whether a goal counts right now (#29): the flow's own answer, and nothing else.
+        ///
+        /// This used to short-circuit on <see cref="KickoffEnabled"/>, meaning to leave scenes
+        /// without kickoffs behaving as they always had. It punched a hole in the gate instead:
+        /// the flow runs either way, the clock still reaches Over, and the left side answered
+        /// true anyway — so with kickoffs off and the timer on, a ball crossing the line after
+        /// full time settled banks the results screen had already been written from. #29's own
+        /// third symptom, let back in by the guard meant to preserve the old behaviour.
+        ///
+        /// No guard is needed: with kickoffs off the countdown is zero-length, so the flow is
+        /// Playing from the first call and stays there until a timer ends it.
         /// </summary>
-        public bool ScoringOpen => !KickoffEnabled || _flow.ScoringOpen;
+        public bool ScoringOpen => _flow.ScoringOpen;
 
         private void OnEnable() => GoalTargetVolume.Scored += OnGoal;
 
@@ -137,6 +146,15 @@ namespace FiftyFifty.Match
                 {
                     p.Board.Frozen = false;
                 }
+            }
+
+            // The ball is frozen by the same hand as the boards, so it is released by the same
+            // one. Leaving it held would outlive the component that held it: a disabled director
+            // leaves no trace, and a ball frozen for the rest of the session is the loudest
+            // trace there is.
+            if (_ball != null)
+            {
+                _ball.Frozen = false;
             }
         }
 

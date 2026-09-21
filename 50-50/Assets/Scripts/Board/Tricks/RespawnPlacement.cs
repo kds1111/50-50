@@ -65,7 +65,7 @@ namespace FiftyFifty.Board.Tricks
         /// direction is a slide or a shove rather than an intention, and facing you that way on
         /// return would aim you at whatever knocked you over.
         /// </summary>
-        public static float Facing(float speed, float travelHeading, float boardHeading, float latchSpeed) =>
-            speed >= latchSpeed ? travelHeading : boardHeading;
+        public static float Facing(float speed, float travelHeading, float boardHeading, float travelSpeedFloor) =>
+            speed >= travelSpeedFloor ? travelHeading : boardHeading;
     }
 }

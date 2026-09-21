@@ -135,8 +135,9 @@ namespace FiftyFifty.Board.Tricks
         public float TravelSpeedFloor = 2f;
 
         [Header("Bail flash (#25)")]
-        [Tooltip("Flash the greybox while you are down. Stands in for the fall animation, and " +
-                 "marks #6's invulnerable window: flashing means down and untouchable.")]
+        [Tooltip("Flash the greybox while you are down. Stands in for the fall animation. It is " +
+                 "a picture of the state, not a rule: nothing yet stops a downed player being " +
+                 "hit, stripped, or grabbing and punching. What down means is still open.")]
         public bool FlashWhileDown = true;
 
         [Tooltip("Flashes per second while down.")]

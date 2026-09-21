@@ -87,16 +87,24 @@ namespace FiftyFifty.Ball
                 return;
             }
 
+            // #29: a goal only counts while the match is being played — and an entry that does
+            // not count is not an entry at all. This gate used to sit further down, over the
+            // settle alone, so a ball crossing the line during a pause still took the counter,
+            // the log line and the whole lockout with it: the lockout then outlived the pause
+            // and swallowed the first real goal of resumed play.
+            if (!MatchAllowsScoring)
+            {
+                return;
+            }
+
             _entries++;
             _lastEntrySpeed = ball.Velocity.magnitude;
             _lockoutRemaining = LockoutSeconds;
 
             Debug.Log($"[50-50] Goal #{_entries} in side {DefendedBy}'s net at {_lastEntrySpeed:0.0} m/s");
 
-            // #29: a goal only counts while the match is being played. The director owns the
-            // phase; with no director in the scene there is no match to be outside of, so it
-            // settles as it always did.
-            if (ScoringEnabled && MatchAllowsScoring)
+            // The phase was settled above; what is left is whether this volume scores at all.
+            if (ScoringEnabled)
             {
                 Settle();
             }
