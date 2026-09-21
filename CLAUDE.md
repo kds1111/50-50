@@ -12,6 +12,20 @@ The five canonical roles, each label string equal to its name. See `docs/agents/
 
 Single-context — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
 
+### Hardcoded gameplay values
+
+The dev tunes in the Inspector and should never have to edit a script to change how the game
+plays. When a change hardcodes a value that affects how the game plays, feels or reads, add it
+to the index on [#28](https://github.com/kds1111/50-50/issues/28) **in the same change** — script,
+symbol, line, and one line on what changing it would do.
+
+The bar is "would the dev ever ask to change this?". Epsilons, buffer sizes, loop bounds, string
+keys and layout constants are implementation details and stay out; an index nobody can finish
+reading is an index nobody reads.
+
+Better still, expose it. The index is for values that genuinely cannot be fields yet, not a
+place to file the ones you did not feel like wiring.
+
 ### Recommend skills at the end of every reply
 
 Close every substantive reply with a short **Skills** line naming the skills that fit *this* moment, as slash commands, each with a few words of why. Recommend only what applies right now; if nothing does, write nothing rather than padding the list.
