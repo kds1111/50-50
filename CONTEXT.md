@@ -56,4 +56,4 @@ Use these terms exactly. If a concept you need isn't here, either you're inventi
 
 - The current effort is charted on the [vertical slice map](https://github.com/kds1111/50-50/issues/1) — destination, settled decisions, and what is deliberately not yet specified.
 - `docs/research/` holds research findings, each tied to the ticket that asked for it.
-- `docs/adr/` holds architectural decision records. The directory exists and is empty: no ADR is written yet, because decisions have lived on the map so far. [#10](https://github.com/kds1111/50-50/issues/10) is expected to be the first.
+- `docs/adr/` holds architectural decision records. [ADR-0001](docs/adr/0001-simulation-assembly-boundary.md) puts the rules of the game in `Assets/Scripts/Sim/`, an assembly compiled without `UnityEngine`, so a wall-clock or rendered-transform read inside simulation is a compile error rather than a review finding ([#10](https://github.com/kds1111/50-50/issues/10)). Other decisions have lived on the map so far.
